@@ -21,7 +21,7 @@ echo ""
 mkdir -p /mnt/data/models
 mkdir -p /mnt/data/datasets
 mkdir -p /mnt/data/temp
-mkdir -p /mnt/automl-service/uploads
+mkdir -p /mnt/code/automl-service/uploads
 
 # Debug: Print Domino environment variables
 echo "Domino Environment:"
@@ -37,7 +37,7 @@ echo ""
 # ==========================================
 echo "Starting backend service on port $BACKEND_PORT..."
 
-cd /mnt/automl-service
+cd /mnt/code/automl-service
 
 # Install lightweight dependencies if needed
 pip install -q --no-deps aiosqlite aiofiles pydantic-settings python-multipart httpx 2>/dev/null || true
@@ -75,7 +75,7 @@ fi
 echo ""
 echo "Starting frontend service on port $PORT..."
 
-cd /mnt/automl-ui
+cd /mnt/code/automl-ui
 
 # Set API URL to local backend
 export API_SERVICE_URL="http://127.0.0.1:$BACKEND_PORT"
