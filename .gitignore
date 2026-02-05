@@ -12,6 +12,7 @@ node_modules/
 automl-ui/dist/
 
 # Python
+.venv/
 __pycache__/
 *.pyc
 *.pyo

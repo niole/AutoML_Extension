@@ -1,171 +1,189 @@
-# Domino AutoML Oil and Gas Demo
+# AutoML Studio
 
-An AutoGluon on Domino Data Lab Demo for oil & gas use cases.
+A full-stack AutoML platform built on [AutoGluon](https://auto.gluon.ai/) and [Domino Data Lab](https://www.dominodatalab.com/). Provides a web UI for training, evaluating, and deploying ML models across tabular, time series, and multimodal data types.
 
-## Components
+## Architecture
 
-### 1. Notebooks (`notebooks/`)
-Jupyter notebooks demonstrating **AutoGluon model types** with comprehensive EDA, visualizations, and advanced features:
+```
+automl-service/          FastAPI backend (Python 3.11, AutoGluon 1.5, MLflow)
+automl-ui/               React frontend (TypeScript, Vite, Tailwind CSS)
+sample_projects/         Example datasets (customer churn)
+app.sh                   Combined startup script for Domino Apps
+Dockerfile               Container build for Domino deployment
+```
 
-| Notebook | Data Type | Model Type | Use Case |
-|----------|-----------|------------|----------|
-| `01_tabular_predictive_maintenance/` | **Tabular** | TabularPredictor | Equipment failure prediction (multi-class classification) |
-| `02_timeseries_production_forecast/` | **Time Series** | TimeSeriesPredictor | Multi-well oil production forecasting |
-| `03_multimodal_defect_detection/` | **Images** | MultiModalPredictor | Visual equipment inspection (binary classification) |
-| `04_tabular_yield_prediction/` | **Tabular** | TabularPredictor | Chemical process yield prediction (regression) |
+### Backend (`automl-service/`)
 
-Each notebook includes:
-- **Synthetic data generation** for realistic use cases
-- **Comprehensive EDA** with 10+ visualizations (distributions, correlations, pair plots)
-- **Advanced AutoGluon features**: Multi-layer stacking, bagging, custom hyperparameters
-- **Model leaderboard** comparing all trained models
-- **Feature importance** analysis (permutation-based)
-- **Prediction analysis** (residuals, error distribution, actual vs predicted)
-- **Domino MLflow tracking** for experiment management
-- **Model registry** integration for deployment
-- **Containerized deployment** with Dockerfile and FastAPI
+**11,400 LOC** across 38 Python files. Async FastAPI with SQLAlchemy ORM, AutoGluon ML, and MLflow tracking.
 
-### 2. AutoML Service (`automl-service/`)
-FastAPI service exposing AutoGluon functionality:
+| Layer | Files | Purpose |
+|-------|-------|---------|
+| `app/api/routes/` | 9 routers | REST endpoints (50+ routes) + WebSocket |
+| `app/api/schemas/` | 3 files | Pydantic request/response models |
+| `app/core/` | 12 services | AutoGluon training, predictions, diagnostics, export, MLflow, Domino integration |
+| `app/db/` | 3 files | SQLAlchemy models, async CRUD, migrations |
+| `app/workers/` | 1 file | Background training orchestration |
 
-- **Training Jobs**: Create, monitor, and manage AutoGluon training jobs
-- **Dataset Management**: Upload files or connect to Domino datasets
-- **Model Registry**: Register and deploy trained models
-- **Experiment Tracking**: MLflow integration with Domino
+### Frontend (`automl-ui/`)
 
-### 3. AutoML UI (`automl-ui/`)
-React TypeScript application styled like Domino Data Lab:
+**14,500 LOC** across 66 TypeScript files. React 18 with React Query for server state and Zustand for UI state.
 
-- **Dashboard**: View and manage training jobs
-- **Training Wizard**: 4-step workflow for creating training jobs
-- **Job Details**: Monitor training progress, view metrics and logs
-- **Model Deployment**: Deploy models to Domino Model API
+| Layer | Files | Purpose |
+|-------|-------|---------|
+| `src/pages/` | 4 pages | Dashboard, NewJob wizard, JobDetail, EDA Analysis |
+| `src/components/` | 35 components | Common UI, wizard steps, diagnostics, charts, EDA |
+| `src/hooks/` | 10 hooks | Data fetching (jobs, datasets, models, diagnostics, registry) |
+| `src/api/` | 4 files | Fetch-based API client with Domino endpoint mapping |
+| `src/types/` | 8 files | TypeScript type definitions |
+
+## Features
+
+- **Training Wizard**: 4-step workflow (data source, model type, configuration, review) with advanced AutoGluon config (bagging, stacking, HPO, pseudo-labeling, distillation)
+- **Model Diagnostics**: Feature importance, leaderboard, confusion matrix, ROC/PR curves, SHAP explanations, learning curves
+- **Exploratory Data Analysis**: Interactive data profiling, column explorer, correlation matrix, data quality checks, notebook export
+- **Dataset Management**: Upload CSV/Parquet or connect to Domino Datasets
+- **Model Registry**: MLflow integration for versioning and stage transitions
+- **Model Export**: ONNX, PMML, and pickle formats
+- **Deployment**: Deploy trained models to Domino Model APIs
+- **Experiment Tracking**: MLflow logging of per-model hyperparameters, metrics, and artifacts
+- **Real-time Progress**: WebSocket-based training progress updates
 
 ## Quick Start
 
-### Running the Service
+### Prerequisites
+
+- Python 3.11 (recommended for AutoGluon compatibility)
+- Node.js 20+
+- [uv](https://github.com/astral-sh/uv) (recommended for Python dependency installation)
+
+### Backend
 
 ```bash
 cd automl-service
+
+# Option A: Using uv (recommended — handles AutoGluon's 200+ transitive deps)
+pip install uv
+VIRTUAL_ENV=../.venv uv pip install -r requirements.txt
+
+# Option B: Using pip (may hit resolution-too-deep on complex dep graphs)
 pip install -r requirements.txt
-python model_api.py
+
+# Run the server
+uvicorn app.main:app --reload --port 8000
 ```
 
-The API will be available at `http://localhost:8000`.
-
-### Running the UI
+### Frontend
 
 ```bash
 cd automl-ui
 npm install
-npm run dev
+npm run dev        # Dev server on http://localhost:5173
+npm run build      # Production build
 ```
 
-The UI will be available at `http://localhost:3000`.
+### Domino Deployment
 
-### Running Notebooks
-
+The `app.sh` script starts both backend and frontend as a combined Domino App:
 ```bash
-cd notebooks
-pip install -r requirements.txt
-jupyter notebook
+# Runs automatically when deployed as a Domino App
+./app.sh
 ```
 
-## API Endpoints
+## API Reference
 
 ### Jobs
-- `POST /api/v1/jobs` - Create training job
-- `GET /api/v1/jobs` - List jobs
-- `GET /api/v1/jobs/{id}` - Get job details
-- `GET /api/v1/jobs/{id}/status` - Get job status
-- `GET /api/v1/jobs/{id}/logs` - Get job logs
-- `POST /api/v1/jobs/{id}/cancel` - Cancel job
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/jobs` | Create training job |
+| GET | `/api/v1/jobs` | List jobs (filter by status, owner, project) |
+| GET | `/api/v1/jobs/{id}` | Get job details |
+| DELETE | `/api/v1/jobs/{id}` | Delete job |
+| POST | `/api/v1/jobs/{id}/cancel` | Cancel running job |
+| GET | `/api/v1/jobs/{id}/progress` | Get training progress |
+| GET | `/api/v1/jobs/{id}/logs` | Get job logs |
+| POST | `/api/v1/jobs/{id}/register` | Register model to MLflow |
+| WS | `/ws/jobs/{id}` | Real-time progress updates |
 
 ### Datasets
-- `GET /api/v1/datasets` - List Domino datasets
-- `POST /api/v1/datasets/upload` - Upload file
-- `GET /api/v1/datasets/{id}/preview` - Preview data
-- `GET /api/v1/datasets/{id}/schema` - Get column schema
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/datasets` | List local datasets |
+| POST | `/api/v1/datasets/upload` | Upload CSV/Parquet |
+| GET | `/api/v1/datasets/{id}` | Get dataset metadata |
+| GET | `/api/v1/datasets/{id}/preview` | Preview rows |
+| GET | `/api/v1/datasets/{id}/download` | Download file |
+| DELETE | `/api/v1/datasets/{id}` | Delete dataset |
+| GET | `/api/v1/domino-datasets` | List Domino Datasets |
 
-### Models
-- `GET /api/v1/models` - List registered models
-- `POST /api/v1/models/{name}/deploy` - Deploy model
+### Model Diagnostics
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/models/{id}/diagnostics/feature-importance` | Feature importance |
+| GET | `/api/v1/models/{id}/diagnostics/leaderboard` | Model leaderboard |
+| GET | `/api/v1/models/{id}/diagnostics/confusion-matrix` | Confusion matrix |
+| GET | `/api/v1/models/{id}/diagnostics/roc-curve` | ROC curve |
+| GET | `/api/v1/models/{id}/diagnostics/precision-recall` | PR curve |
+| GET | `/api/v1/models/{id}/diagnostics/regression` | Regression metrics |
+| GET | `/api/v1/models/{id}/diagnostics/shap` | SHAP explanations |
 
-## Training Wizard Steps
+### Predictions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/predict/{id}` | Single/batch prediction |
+| POST | `/api/v1/predict/{id}/file` | Predict from CSV upload |
+| POST | `/api/v1/batch-predict/{id}` | Batch prediction |
+| POST | `/api/v1/forecast/{id}` | Time series forecast |
 
-1. **Data Source**: Upload CSV/Parquet or select Domino dataset
-2. **Model Type**: Choose Tabular, TimeSeries, or Multimodal
-3. **Configuration**: Set target column, preset, time limit
-4. **Review**: Confirm and start training
+### Registry & Export
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/registry/register` | Register model to MLflow |
+| GET | `/api/v1/registry/models` | List registered models |
+| POST | `/api/v1/export/{id}/onnx` | Export to ONNX |
+| POST | `/api/v1/export/{id}/pmml` | Export to PMML |
+| POST | `/api/v1/export/{id}/pickle` | Export to pickle |
 
-## Domino Integration
+### Deployments
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/deployments/deploy/{id}` | Deploy to Domino Model API |
+| GET | `/api/v1/deployments` | List deployments |
+| POST | `/api/v1/deployments/{id}/start` | Start deployment |
+| POST | `/api/v1/deployments/{id}/stop` | Stop deployment |
 
-- **Datasets**: Access via Domino SDK (`dominodatalab` package)
-- **Experiments**: MLflow tracking with Domino integration
-- **Model Registry**: Register models via MLflow
-- **Deployment**: Deploy as Domino Model API
+## Environment Variables
 
-### Environment Variables
-
-```bash
-DOMINO_USER_API_KEY     # Domino API key
-DOMINO_API_HOST         # Domino API endpoint
-DOMINO_PROJECT_ID       # Current project ID
-MLFLOW_TRACKING_URI     # MLflow tracking server
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | No | SQLite URL (default: `sqlite:///./automl.db`) |
+| `MODELS_PATH` | No | Model storage directory |
+| `DATASETS_PATH` | No | Dataset storage directory |
+| `UPLOADS_PATH` | No | Upload directory |
+| `TEMP_PATH` | No | Temp directory |
+| `DOMINO_USER_API_KEY` | Domino only | Domino API key |
+| `DOMINO_API_HOST` | Domino only | Domino API endpoint |
+| `DOMINO_PROJECT_ID` | Domino only | Current project ID |
+| `DOMINO_PROJECT_NAME` | Domino only | Current project name |
+| `MLFLOW_TRACKING_URI` | Domino only | MLflow tracking server |
 
 ## Technology Stack
 
 ### Backend
-- Python 3.10+
-- FastAPI
-- SQLAlchemy + SQLite
-- AutoGluon (Tabular, TimeSeries, Multimodal)
-- MLflow
-- Domino SDK
+- **Python 3.11** with async FastAPI
+- **AutoGluon 1.5** (Tabular, TimeSeries, Multimodal)
+- **SQLAlchemy 2.0** + aiosqlite (async SQLite)
+- **MLflow 3.9** for experiment tracking
+- **Ray Tune** for hyperparameter optimization
+- **PyTorch 2.9** (underlying ML framework)
 
 ### Frontend
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-- Zustand (state management)
-- React Query
-
-## Project Structure
-
-```
-domino-automl/
-├── notebooks/
-│   ├── requirements.txt
-│   ├── 01_tabular_predictive_maintenance/
-│   │   ├── predictive_maintenance.ipynb
-│   │   └── deployment/
-│   ├── 02_timeseries_production_forecast/
-│   │   ├── production_forecasting.ipynb
-│   │   └── deployment/
-│   ├── 03_multimodal_defect_detection/
-│   │   ├── defect_detection.ipynb
-│   │   └── deployment/
-│   └── 04_tabular_yield_prediction/
-│       ├── yield_prediction.ipynb
-│       └── deployment/
-├── automl-service/
-│   ├── app/
-│   │   ├── api/routes/
-│   │   ├── core/
-│   │   ├── db/
-│   │   └── workers/
-│   ├── requirements.txt
-│   └── Dockerfile
-├── automl-ui/
-    └── src/
-        ├── components/
-        ├── pages/
-        ├── hooks/
-        └── store/
-
-```
+- **React 18** with TypeScript
+- **Vite 5** (build tool)
+- **Tailwind CSS 3.4** (utility-first styling)
+- **TanStack React Query 5** (server state)
+- **Zustand 4** (UI state)
+- **Recharts 2** (charting)
+- **Headless UI** + **Heroicons** (accessible components)
 
 ## License
 
