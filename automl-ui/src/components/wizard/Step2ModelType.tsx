@@ -105,8 +105,10 @@ function Step2ModelType() {
           <button
             key={option.type}
             onClick={() => handleSelectModelType(option.type)}
+            disabled={option.type === 'multimodal'}
             className={clsx(
               'p-6 rounded-lg border-2 transition-colors text-left relative',
+              option.type === 'multimodal' && 'opacity-50 cursor-not-allowed',
               modelType?.modelType === option.type
                 ? 'border-domino-accent-purple bg-domino-accent-purple/10'
                 : 'border-domino-border hover:border-domino-text-muted'
