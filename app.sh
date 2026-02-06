@@ -1,87 +1,60 @@
 #!/bin/bash
-# Combined Domino App startup script for AutoML
-# Runs both backend (FastAPI) and frontend (React) as a single app
+# AutoML Studio - Unified startup script
+# Replaces: app.sh, automl-service/app.sh, automl-ui/app.sh, automl-ui/setup_app_preview.sh
+#
+# Usage:
+#   ./app.sh              # Combined mode: build frontend + start backend serving everything
+#   ./app.sh --backend    # Backend only (API server)
+#   ./app.sh --frontend   # Frontend only (Vite dev server for development)
+#   ./app.sh --dev        # Dev mode: backend + Vite dev server with HMR
 
 set -e
 
-echo "=========================================="
-echo "AutoML Studio - Combined App Startup"
-echo "=========================================="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODE="${1:---all}"
 
-# Set default environment variables
+# Defaults
 export HOST=${HOST:-0.0.0.0}
-export PORT=${PORT:-8888}
 export BACKEND_PORT=${BACKEND_PORT:-8000}
+export FRONTEND_PORT=${FRONTEND_PORT:-3000}
+export PORT=${PORT:-8888}
+export WORKERS=${WORKERS:-4}
 
-echo "Frontend Port: $PORT"
-echo "Backend Port: $BACKEND_PORT"
-echo ""
-
-# Ensure required directories exist
-mkdir -p /mnt/data/models
-mkdir -p /mnt/data/datasets
-mkdir -p /mnt/data/temp
-mkdir -p /mnt/code/automl-service/uploads
-
-# Debug: Print Domino environment variables
-echo "Domino Environment:"
-echo "  DOMINO_API_HOST: ${DOMINO_API_HOST:-NOT SET}"
-echo "  DOMINO_API_KEY: ${DOMINO_API_KEY:+SET (hidden)}"
-echo "  DOMINO_USER_API_KEY: ${DOMINO_USER_API_KEY:+SET (hidden)}"
-echo "  DOMINO_PROJECT_NAME: ${DOMINO_PROJECT_NAME:-NOT SET}"
-echo "  DOMINO_PROJECT_OWNER: ${DOMINO_PROJECT_OWNER:-NOT SET}"
-echo ""
-
-# ==========================================
-# Start Backend Service
-# ==========================================
-echo "Starting backend service on port $BACKEND_PORT..."
-
-cd /mnt/code/automl-service
-
-# Install lightweight dependencies if needed
-pip install -q --no-deps aiosqlite aiofiles pydantic-settings python-multipart httpx 2>/dev/null || true
-
-# Start backend in background
-uvicorn app.main:app \
-    --host 127.0.0.1 \
-    --port "$BACKEND_PORT" \
-    --log-level warning &
-
-BACKEND_PID=$!
-echo "Backend started with PID: $BACKEND_PID"
-
-# Wait for backend to be ready
-echo "Waiting for backend to be ready..."
-MAX_RETRIES=30
-RETRY_COUNT=0
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -s "http://127.0.0.1:$BACKEND_PORT/svc/v1/health" > /dev/null 2>&1; then
-        echo "Backend is ready!"
-        break
-    fi
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    sleep 1
-done
-
-if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "ERROR: Backend failed to start within $MAX_RETRIES seconds"
-    exit 1
+# Detect Domino environment
+IS_DOMINO=false
+if [ -n "$DOMINO_RUN_ID" ]; then
+    IS_DOMINO=true
 fi
 
-# ==========================================
-# Start Frontend Service
-# ==========================================
-echo ""
-echo "Starting frontend service on port $PORT..."
+# ── Helpers ──────────────────────────────────────────────────────────
 
-cd /mnt/code/automl-ui
+print_header() {
+    echo "=========================================="
+    echo "AutoML Studio - $1"
+    echo "=========================================="
+}
 
-# Set API URL to local backend
-export API_SERVICE_URL="http://127.0.0.1:$BACKEND_PORT"
+print_env() {
+    echo "Domino Environment:"
+    echo "  DOMINO_API_HOST: ${DOMINO_API_HOST:-NOT SET}"
+    echo "  DOMINO_API_KEY: ${DOMINO_API_KEY:+SET (hidden)}"
+    echo "  DOMINO_USER_API_KEY: ${DOMINO_USER_API_KEY:+SET (hidden)}"
+    echo "  DOMINO_PROJECT_NAME: ${DOMINO_PROJECT_NAME:-NOT SET}"
+    echo "  DOMINO_PROJECT_OWNER: ${DOMINO_PROJECT_OWNER:-NOT SET}"
+    echo ""
+}
 
-# Ensure Node.js/npm is available
-if ! command -v npm &> /dev/null; then
+ensure_dirs() {
+    mkdir -p /mnt/data/models 2>/dev/null || mkdir -p "${SCRIPT_DIR}/local_data/models"
+    mkdir -p /mnt/data/datasets 2>/dev/null || mkdir -p "${SCRIPT_DIR}/local_data/datasets"
+    mkdir -p /mnt/data/temp 2>/dev/null || mkdir -p "${SCRIPT_DIR}/local_data/temp"
+    mkdir -p /mnt/automl-service/uploads 2>/dev/null || mkdir -p "${SCRIPT_DIR}/local_data/uploads"
+}
+
+ensure_node() {
+    if command -v npm &> /dev/null; then
+        return
+    fi
     echo "npm not found, installing Node.js 20..."
     NODE_VERSION="v20.18.1"
     NODE_DIR="/tmp/node-${NODE_VERSION}-linux-x64"
@@ -92,44 +65,149 @@ if ! command -v npm &> /dev/null; then
         rm /tmp/node.tar.xz
     fi
     export PATH="${NODE_DIR}/bin:$PATH"
-fi
-
-echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
-
-# Install npm dependencies and build
-echo "Installing npm dependencies..."
-npm install --silent
-
-echo "Building UI..."
-npm run build
-
-# Generate runtime config - API calls go through local proxy
-echo "Generating runtime config..."
-cat > dist/config.js << 'EOF'
-// Runtime configuration
-// API calls go through this server's proxy to the backend service
-window.APP_CONFIG = {
-  API_URL: ""
-};
-EOF
-
-# Install Python dependencies for proxy server
-pip install -q fastapi uvicorn httpx 2>/dev/null || true
-
-echo ""
-echo "=========================================="
-echo "Starting AutoML Studio on http://0.0.0.0:$PORT"
-echo "Backend API: http://127.0.0.1:$BACKEND_PORT"
-echo "=========================================="
-
-# Trap to clean up backend on exit
-cleanup() {
-    echo "Shutting down..."
-    kill $BACKEND_PID 2>/dev/null || true
-    exit 0
 }
-trap cleanup SIGTERM SIGINT
 
-# Start the frontend FastAPI server (includes proxy to backend)
-exec uvicorn server:app --host "$HOST" --port "$PORT" --log-level info
+install_lightweight_deps() {
+    pip install -q --no-deps aiosqlite aiofiles pydantic-settings python-multipart httpx 2>/dev/null || true
+}
+
+build_frontend() {
+    echo "Building frontend..."
+    cd "${SCRIPT_DIR}/automl-ui"
+    ensure_node
+    echo "Node.js: $(node --version), npm: $(npm --version)"
+    npm install --silent
+    npm run build
+
+    # Generate runtime config (empty API_URL = same origin)
+    cat > dist/config.js << 'JSEOF'
+window.APP_CONFIG = { API_URL: "" };
+JSEOF
+    echo "Frontend built successfully"
+    cd "$SCRIPT_DIR"
+}
+
+start_backend() {
+    local port="${1:-$PORT}"
+    local service_dir="${SCRIPT_DIR}/automl-service"
+
+    # Use /mnt/code path if in Domino, otherwise local
+    if [ -d "/mnt/code/automl-service" ]; then
+        service_dir="/mnt/code/automl-service"
+    fi
+
+    cd "$service_dir"
+    install_lightweight_deps
+
+    if [ "${RELOAD:-false}" = "true" ]; then
+        echo "Starting backend (dev mode with reload) on port $port..."
+        exec uvicorn app.main:app --host "$HOST" --port "$port" --reload --log-level info
+    else
+        echo "Starting backend on port $port..."
+        exec uvicorn app.main:app --host "$HOST" --port "$port" --workers "$WORKERS" --log-level info
+    fi
+}
+
+start_backend_background() {
+    local port="${1:-$BACKEND_PORT}"
+    local service_dir="${SCRIPT_DIR}/automl-service"
+
+    if [ -d "/mnt/code/automl-service" ]; then
+        service_dir="/mnt/code/automl-service"
+    fi
+
+    cd "$service_dir"
+    install_lightweight_deps
+
+    uvicorn app.main:app --host 127.0.0.1 --port "$port" --log-level warning &
+    BACKEND_PID=$!
+    echo "Backend started (PID: $BACKEND_PID) on port $port"
+
+    # Wait for backend to be ready
+    echo "Waiting for backend..."
+    for i in $(seq 1 30); do
+        if curl -s "http://127.0.0.1:$port/svc/v1/health" > /dev/null 2>&1; then
+            echo "Backend ready!"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "ERROR: Backend failed to start within 30 seconds"
+    exit 1
+}
+
+# ── Modes ────────────────────────────────────────────────────────────
+
+case "$MODE" in
+    --backend)
+        print_header "Backend Only"
+        print_env
+        ensure_dirs
+        start_backend "$PORT"
+        ;;
+
+    --frontend)
+        print_header "Frontend Dev Server"
+        cd "${SCRIPT_DIR}/automl-ui"
+        ensure_node
+
+        # Set base path for Domino workspace proxy
+        if [ "$IS_DOMINO" = true ]; then
+            export VITE_BASE_PATH="/notebookSession/${DOMINO_RUN_ID}/proxy/${FRONTEND_PORT}/"
+            export VITE_API_URL="/notebookSession/${DOMINO_RUN_ID}/proxy/${BACKEND_PORT}"
+            echo "Domino workspace mode: $VITE_BASE_PATH"
+        else
+            export VITE_API_URL="http://localhost:${BACKEND_PORT}"
+        fi
+
+        npm install
+        echo "Starting Vite dev server on port $FRONTEND_PORT..."
+        exec npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"
+        ;;
+
+    --dev)
+        print_header "Development Mode"
+        print_env
+        ensure_dirs
+
+        # Start backend in background
+        start_backend_background "$BACKEND_PORT"
+        cd "$SCRIPT_DIR"
+
+        # Start frontend dev server in foreground
+        cd "${SCRIPT_DIR}/automl-ui"
+        ensure_node
+        export VITE_API_URL="http://localhost:${BACKEND_PORT}"
+        npm install
+        echo ""
+        echo "Backend:  http://127.0.0.1:$BACKEND_PORT"
+        echo "Frontend: http://localhost:$FRONTEND_PORT"
+        echo ""
+
+        trap "kill $BACKEND_PID 2>/dev/null; exit 0" SIGTERM SIGINT
+        npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"
+        ;;
+
+    --all|*)
+        print_header "Combined Mode"
+        print_env
+        ensure_dirs
+
+        # Build frontend
+        build_frontend
+
+        # Start backend serving both API and static files
+        export STATIC_DIR="${SCRIPT_DIR}/automl-ui/dist"
+        if [ -d "/mnt/code/automl-ui/dist" ]; then
+            export STATIC_DIR="/mnt/code/automl-ui/dist"
+        fi
+
+        echo ""
+        echo "Starting AutoML Studio on http://0.0.0.0:$PORT"
+        echo "  API:      /svc/v1/*"
+        echo "  Frontend: / (served from $STATIC_DIR)"
+        echo ""
+
+        start_backend "$PORT"
+        ;;
+esac
