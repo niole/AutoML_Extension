@@ -12,6 +12,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+from app.core.model_loader import load_predictor, load_dataframe
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,18 +47,13 @@ class ModelDiagnostics:
 
         try:
             if model_type == "tabular":
-                from autogluon.tabular import TabularPredictor
-                predictor = TabularPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 # Get feature importance
                 if data_path and os.path.exists(data_path):
-                    if data_path.endswith('.csv'):
-                        data = pd.read_csv(data_path)
-                    else:
-                        data = pd.read_parquet(data_path)
+                    data = load_dataframe(data_path)
                     importance = predictor.feature_importance(data, silent=True)
                 else:
-                    # Use default importance if available
                     importance = predictor.feature_importance(silent=True)
 
                 if importance is not None and len(importance) > 0:
@@ -75,8 +72,7 @@ class ModelDiagnostics:
                     result["features"] = features
 
             elif model_type == "timeseries":
-                from autogluon.timeseries import TimeSeriesPredictor
-                predictor = TimeSeriesPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 try:
                     importance = predictor.feature_importance()
@@ -109,12 +105,10 @@ class ModelDiagnostics:
 
         try:
             if model_type == "tabular":
-                from autogluon.tabular import TabularPredictor
-                predictor = TabularPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 leaderboard = predictor.leaderboard(silent=True)
                 if leaderboard is not None and len(leaderboard) > 0:
-                    # Convert to records, ensuring numeric values are floats
                     models = []
                     for _, row in leaderboard.iterrows():
                         model_data = {}
@@ -132,8 +126,7 @@ class ModelDiagnostics:
                     result["eval_metric"] = predictor.eval_metric.name if hasattr(predictor.eval_metric, 'name') else str(predictor.eval_metric)
 
             elif model_type == "timeseries":
-                from autogluon.timeseries import TimeSeriesPredictor
-                predictor = TimeSeriesPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 leaderboard = predictor.leaderboard()
                 if leaderboard is not None and len(leaderboard) > 0:
@@ -178,18 +171,13 @@ class ModelDiagnostics:
                 result["error"] = "Confusion matrix only available for tabular models"
                 return result
 
-            from autogluon.tabular import TabularPredictor
-            predictor = TabularPredictor.load(model_path)
+            predictor = load_predictor(model_path, "tabular")
 
             if predictor.problem_type not in ['binary', 'multiclass']:
                 result["error"] = "Confusion matrix only available for classification problems"
                 return result
 
-            # Load test data
-            if data_path.endswith('.csv'):
-                data = pd.read_csv(data_path)
-            else:
-                data = pd.read_parquet(data_path)
+            data = load_dataframe(data_path)
 
             # Get predictions
             y_true = data[predictor.label]
@@ -253,18 +241,13 @@ class ModelDiagnostics:
                 result["error"] = "ROC curve only available for tabular models"
                 return result
 
-            from autogluon.tabular import TabularPredictor
-            predictor = TabularPredictor.load(model_path)
+            predictor = load_predictor(model_path, "tabular")
 
             if predictor.problem_type != 'binary':
                 result["error"] = "ROC curve only available for binary classification"
                 return result
 
-            # Load test data
-            if data_path.endswith('.csv'):
-                data = pd.read_csv(data_path)
-            else:
-                data = pd.read_parquet(data_path)
+            data = load_dataframe(data_path)
 
             # Get probabilities
             y_true = data[predictor.label]
@@ -323,18 +306,13 @@ class ModelDiagnostics:
                 result["error"] = "PR curve only available for tabular models"
                 return result
 
-            from autogluon.tabular import TabularPredictor
-            predictor = TabularPredictor.load(model_path)
+            predictor = load_predictor(model_path, "tabular")
 
             if predictor.problem_type != 'binary':
                 result["error"] = "PR curve only available for binary classification"
                 return result
 
-            # Load test data
-            if data_path.endswith('.csv'):
-                data = pd.read_csv(data_path)
-            else:
-                data = pd.read_parquet(data_path)
+            data = load_dataframe(data_path)
 
             # Get probabilities
             y_true = data[predictor.label]
@@ -391,18 +369,13 @@ class ModelDiagnostics:
                 result["error"] = "Regression diagnostics only available for tabular models"
                 return result
 
-            from autogluon.tabular import TabularPredictor
-            predictor = TabularPredictor.load(model_path)
+            predictor = load_predictor(model_path, "tabular")
 
             if predictor.problem_type != 'regression':
                 result["error"] = "These diagnostics are only for regression problems"
                 return result
 
-            # Load test data
-            if data_path.endswith('.csv'):
-                data = pd.read_csv(data_path)
-            else:
-                data = pd.read_parquet(data_path)
+            data = load_dataframe(data_path)
 
             # Get predictions
             y_true = data[predictor.label].values
@@ -498,8 +471,7 @@ class ModelDiagnostics:
 
         try:
             if model_type == "tabular":
-                from autogluon.tabular import TabularPredictor
-                predictor = TabularPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 # Try to get fit summary - convert to string to avoid serialization issues
                 try:
@@ -525,8 +497,7 @@ class ModelDiagnostics:
                     result["models"] = models
 
             elif model_type == "multimodal":
-                from autogluon.multimodal import MultiModalPredictor
-                predictor = MultiModalPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 # Check for training logs
                 log_dir = os.path.join(model_path, "logs")
@@ -543,8 +514,7 @@ class ModelDiagnostics:
                         pass
 
             elif model_type == "timeseries":
-                from autogluon.timeseries import TimeSeriesPredictor
-                predictor = TimeSeriesPredictor.load(model_path)
+                predictor = load_predictor(model_path, model_type)
 
                 leaderboard = predictor.leaderboard()
                 if leaderboard is not None:
@@ -607,14 +577,9 @@ class ModelDiagnostics:
             # No pre-computed values, compute on-demand
             logger.info("No pre-computed SHAP values found, computing on-demand")
 
-            from autogluon.tabular import TabularPredictor
-            predictor = TabularPredictor.load(model_path)
+            predictor = load_predictor(model_path, "tabular")
 
-            # Load data
-            if data_path.endswith('.csv'):
-                data = pd.read_csv(data_path)
-            else:
-                data = pd.read_parquet(data_path)
+            data = load_dataframe(data_path)
 
             # Sample data if too large
             if len(data) > num_samples:

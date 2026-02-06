@@ -1,0 +1,172 @@
+"""Time series prediction trainer."""
+
+import logging
+from typing import Any, Dict, Optional
+
+import pandas as pd
+
+from .base import BaseTrainer, AdvancedConfig
+
+logger = logging.getLogger(__name__)
+
+
+class TrainingProgressCallback:
+    """Callback for tracking training progress."""
+
+    def __init__(self, job_id: str, log_callback=None):
+        self.job_id = job_id
+        self.log_callback = log_callback
+
+    def on_progress(self, percent: float, message: str):
+        """Called to update progress percentage."""
+        if self.log_callback:
+            import asyncio
+            asyncio.create_task(self.log_callback(f"[{percent:.0f}%] {message}"))
+
+
+class TimeSeriesTrainer(BaseTrainer):
+    """Trainer for time series prediction models."""
+
+    async def train(
+        self,
+        df: pd.DataFrame,
+        target_column: str,
+        time_column: Optional[str],
+        id_column: Optional[str],
+        prediction_length: Optional[int],
+        model_path: str,
+        preset: str = "medium_quality",
+        time_limit: Optional[int] = None,
+        eval_metric: Optional[str] = None,
+        advanced_config: Optional[AdvancedConfig] = None,
+        timeseries_config: Optional[Dict[str, Any]] = None,
+        progress: Optional[TrainingProgressCallback] = None,
+    ) -> Dict[str, Any]:
+        """Run time series prediction training."""
+        from autogluon.timeseries import TimeSeriesPredictor, TimeSeriesDataFrame
+
+        logger.info("Starting TimeSeriesPredictor training")
+        if progress:
+            progress.on_progress(5, "Initializing TimeSeriesPredictor")
+
+        if not time_column:
+            raise ValueError("time_column is required for timeseries models")
+        if not prediction_length:
+            raise ValueError("prediction_length is required for timeseries models")
+
+        # Convert to TimeSeriesDataFrame
+        ts_df = TimeSeriesDataFrame.from_data_frame(
+            df,
+            id_column=id_column,
+            timestamp_column=time_column,
+        )
+
+        # Configure predictor
+        predictor_kwargs = {
+            "target": target_column,
+            "prediction_length": prediction_length,
+            "path": model_path,
+            "verbosity": advanced_config.verbosity if advanced_config else 2,
+        }
+
+        if eval_metric:
+            predictor_kwargs["eval_metric"] = eval_metric
+
+        # Apply timeseries-specific config to predictor
+        if timeseries_config:
+            if timeseries_config.get("freq"):
+                predictor_kwargs["freq"] = timeseries_config["freq"]
+            if timeseries_config.get("quantile_levels"):
+                predictor_kwargs["quantile_levels"] = timeseries_config["quantile_levels"]
+
+        # Create predictor
+        predictor = TimeSeriesPredictor(**predictor_kwargs)
+
+        # Configure fit parameters
+        fit_kwargs = {
+            "train_data": ts_df,
+            "presets": preset,
+        }
+
+        if time_limit:
+            fit_kwargs["time_limit"] = time_limit
+
+        # Apply advanced configuration
+        if advanced_config:
+            if advanced_config.num_gpus > 0:
+                fit_kwargs["num_gpus"] = advanced_config.num_gpus
+
+            if advanced_config.excluded_model_types:
+                fit_kwargs["excluded_model_types"] = advanced_config.excluded_model_types
+
+            if advanced_config.hyperparameters:
+                fit_kwargs["hyperparameters"] = advanced_config.hyperparameters
+
+        # Apply timeseries-specific config to fit
+        if timeseries_config:
+            # Known covariates
+            if timeseries_config.get("known_covariates_names"):
+                fit_kwargs["known_covariates_names"] = timeseries_config["known_covariates_names"]
+
+            # Static features
+            if timeseries_config.get("static_features_names"):
+                fit_kwargs["static_features_names"] = timeseries_config["static_features_names"]
+
+            # Target scaler
+            if timeseries_config.get("target_scaler"):
+                fit_kwargs["target_scaler"] = timeseries_config["target_scaler"]
+
+            # Enable ensemble
+            if timeseries_config.get("enable_ensemble") is False:
+                fit_kwargs["enable_ensemble"] = False
+
+            # Skip model selection
+            if timeseries_config.get("skip_model_selection"):
+                fit_kwargs["skip_model_selection"] = True
+
+            # Chronos foundation model
+            if timeseries_config.get("use_chronos"):
+                chronos_size = timeseries_config.get("chronos_model_size", "tiny")
+                # Add Chronos to hyperparameters
+                if "hyperparameters" not in fit_kwargs:
+                    fit_kwargs["hyperparameters"] = {}
+                fit_kwargs["hyperparameters"]["Chronos"] = {
+                    "model_path": f"amazon/chronos-t5-{chronos_size}"
+                }
+                logger.info(f"Added Chronos model: amazon/chronos-t5-{chronos_size}")
+
+        if progress:
+            progress.on_progress(10, "Starting model training")
+
+        # Train
+        predictor.fit(**fit_kwargs)
+
+        if progress:
+            progress.on_progress(90, "Training complete, computing metrics")
+
+        # Get results
+        leaderboard = predictor.leaderboard(silent=True)
+        best_model = leaderboard.iloc[0] if len(leaderboard) > 0 else None
+
+        metrics = {
+            "best_model": best_model["model"] if best_model is not None else None,
+            "best_score": float(best_model["score_val"]) if best_model is not None else None,
+            "prediction_length": prediction_length,
+            "eval_metric": str(predictor.eval_metric),
+            "num_models": len(leaderboard),
+        }
+
+        # Return leaderboard as list (schema expects List[Dict])
+        leaderboard_list = leaderboard.to_dict(orient="records")
+
+        if progress:
+            progress.on_progress(100, "Training completed successfully")
+
+        logger.info(f"Training completed. Best model: {metrics['best_model']}")
+
+        return {
+            "metrics": metrics,
+            "leaderboard": leaderboard_list,
+            "model_path": model_path,
+            "predictor": predictor,
+        }

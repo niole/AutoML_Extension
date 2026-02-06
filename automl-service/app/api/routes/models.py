@@ -5,20 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.db import crud
-from app.core.model_registry import ModelRegistry
+from app.core.domino_registry import get_domino_registry, DominoModelRegistry
 from app.api.schemas.model import (
     RegisteredModelResponse,
-    ModelVersionResponse,
     DeployModelRequest,
     DeploymentResponse,
 )
 
 router = APIRouter()
-
-
-def get_model_registry() -> ModelRegistry:
-    """Get model registry instance."""
-    return ModelRegistry()
 
 
 @router.get("", response_model=list[RegisteredModelResponse])
@@ -37,14 +31,12 @@ async def get_model(model_name: str, db: AsyncSession = Depends(get_db)):
     return model
 
 
-@router.get("/{model_name}/versions", response_model=list[ModelVersionResponse])
-async def list_model_versions(
-    model_name: str,
-    registry: ModelRegistry = Depends(get_model_registry),
-):
+@router.get("/{model_name}/versions")
+async def list_model_versions(model_name: str):
     """List all versions of a model."""
     try:
-        versions = await registry.list_versions(model_name)
+        registry = get_domino_registry()
+        versions = registry.get_model_versions(model_name)
         return versions
     except Exception as e:
         raise HTTPException(
@@ -58,23 +50,27 @@ async def deploy_model(
     model_name: str,
     request: DeployModelRequest,
     db: AsyncSession = Depends(get_db),
-    registry: ModelRegistry = Depends(get_model_registry),
 ):
     """Deploy a model to Domino Model API."""
-    # Check if model exists
     model = await crud.get_registered_model(db, model_name)
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
     try:
-        deployment = await registry.deploy_model(
+        from app.core.domino_model_api import get_domino_model_api
+        api = get_domino_model_api()
+        result = await api.deploy_model(
             model_name=model_name,
             model_version=request.model_version,
-            environment_id=request.environment_id,
-            hardware_tier_id=request.hardware_tier_id,
             description=request.description,
         )
-        return deployment
+        return DeploymentResponse(
+            success=result.get("success", False),
+            model_name=model_name,
+            model_version=request.model_version,
+            status=result.get("status", "pending"),
+            message=result.get("message", ""),
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -83,14 +79,13 @@ async def deploy_model(
 
 
 @router.get("/{model_name}/deployments")
-async def list_deployments(
-    model_name: str,
-    registry: ModelRegistry = Depends(get_model_registry),
-):
+async def list_deployments(model_name: str):
     """List active deployments for a model."""
     try:
-        deployments = await registry.list_deployments(model_name)
-        return {"model_name": model_name, "deployments": deployments}
+        from app.core.domino_model_api import get_domino_model_api
+        api = get_domino_model_api()
+        result = await api.list_deployments()
+        return {"model_name": model_name, "deployments": result.get("data", [])}
     except Exception as e:
         raise HTTPException(
             status_code=500,

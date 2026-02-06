@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     mlflow_tracking_uri: Optional[str] = None
     mlflow_tracking_token: Optional[str] = None  # MLFLOW_TRACKING_TOKEN
 
+    # Training defaults
+    default_time_limit: int = 3600
+    default_job_list_limit: int = 100
+    default_preview_rows: int = 10
+    max_shap_samples: int = 100
+    max_scatter_points: int = 500
+
     # CORS
     cors_origins: list[str] = ["*"]
 

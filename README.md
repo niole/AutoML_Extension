@@ -14,25 +14,27 @@ Dockerfile               Container build for Domino deployment
 
 ### Backend (`automl-service/`)
 
-**11,400 LOC** across 38 Python files. Async FastAPI with SQLAlchemy ORM, AutoGluon ML, and MLflow tracking.
+**~11,400 LOC** across 43 Python files. Async FastAPI with SQLAlchemy ORM, AutoGluon ML, and MLflow tracking.
 
 | Layer | Files | Purpose |
 |-------|-------|---------|
 | `app/api/routes/` | 9 routers | REST endpoints (50+ routes) + WebSocket |
 | `app/api/schemas/` | 3 files | Pydantic request/response models |
-| `app/core/` | 12 services | AutoGluon training, predictions, diagnostics, export, MLflow, Domino integration |
+| `app/core/` | 12 services | Predictions, diagnostics, export, MLflow, Domino integration |
+| `app/core/trainers/` | 4 trainers | Tabular, timeseries, multimodal training (split from monolithic runner) |
 | `app/db/` | 3 files | SQLAlchemy models, async CRUD, migrations |
 | `app/workers/` | 1 file | Background training orchestration |
 
 ### Frontend (`automl-ui/`)
 
-**14,500 LOC** across 66 TypeScript files. React 18 with React Query for server state and Zustand for UI state.
+**~13,500 LOC** across 70 TypeScript files. React 18 with React Query for server state and Zustand for UI state.
 
 | Layer | Files | Purpose |
 |-------|-------|---------|
 | `src/pages/` | 4 pages | Dashboard, NewJob wizard, JobDetail, EDA Analysis |
-| `src/components/` | 35 components | Common UI, wizard steps, diagnostics, charts, EDA |
-| `src/hooks/` | 10 hooks | Data fetching (jobs, datasets, models, diagnostics, registry) |
+| `src/components/` | 37 components | Common UI, wizard steps, diagnostics, charts, EDA |
+| `src/hooks/` | 10 hooks | Data fetching (jobs, datasets, models, diagnostics, progress) |
+| `src/utils/` | 3 files | Shared formatters, notebook generator, error handling |
 | `src/api/` | 4 files | Fetch-based API client with Domino endpoint mapping |
 | `src/types/` | 8 files | TypeScript type definitions |
 

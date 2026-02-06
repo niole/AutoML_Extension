@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 
 from app.config import get_settings
+from app.core.model_loader import load_predictor
 
 logger = logging.getLogger(__name__)
 
@@ -26,28 +27,12 @@ class PredictionService:
         return Path(self.settings.models_path) / model_id
 
     def _load_model(self, model_id: str, model_type: str) -> Any:
-        """Load a model from disk."""
+        """Load a model from disk with caching."""
         if model_id in self._loaded_models:
             return self._loaded_models[model_id]
 
         model_path = self._get_model_path(model_id)
-        if not model_path.exists():
-            raise FileNotFoundError(f"Model not found: {model_id}")
-
-        logger.info(f"Loading model {model_id} of type {model_type}")
-
-        if model_type == "tabular":
-            from autogluon.tabular import TabularPredictor
-            predictor = TabularPredictor.load(str(model_path))
-        elif model_type == "timeseries":
-            from autogluon.timeseries import TimeSeriesPredictor
-            predictor = TimeSeriesPredictor.load(str(model_path))
-        elif model_type == "multimodal":
-            from autogluon.multimodal import MultiModalPredictor
-            predictor = MultiModalPredictor.load(str(model_path))
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
-
+        predictor = load_predictor(str(model_path), model_type)
         self._loaded_models[model_id] = predictor
         return predictor
 

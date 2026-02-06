@@ -14,9 +14,9 @@ from app.db.models import JobStatus
 from app.core.autogluon_runner import AutoGluonRunner, AdvancedConfig, HpoConfig, ThresholdConfig
 from app.core.experiment_tracker import ExperimentTracker
 from app.core.dataset_manager import DominoDatasetManager
-from app.core.model_registry import ModelRegistry
 from app.core.domino_registry import get_domino_registry
 from app.core.model_diagnostics import get_model_diagnostics
+from app.core.model_loader import load_predictor, load_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -334,12 +334,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             model_path = result.get("model_path")
             if model_path and os.path.exists(model_path):
                 try:
-                    if job.model_type.value == "tabular":
-                        from autogluon.tabular import TabularPredictor
-                        predictor = TabularPredictor.load(model_path)
-                    elif job.model_type.value == "timeseries":
-                        from autogluon.timeseries import TimeSeriesPredictor
-                        predictor = TimeSeriesPredictor.load(model_path)
+                    predictor = load_predictor(model_path, job.model_type.value)
                 except Exception as e:
                     logger.warning(f"Could not load predictor for hyperparameter logging: {e}")
 
@@ -367,17 +362,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             # Load test data for per-model metric calculation (like notebooks do)
             test_data = None
             try:
-                import pandas as pd
-                if data_path.endswith(".csv"):
-                    test_data = pd.read_csv(data_path)
-                elif data_path.endswith((".parquet", ".pq")):
-                    test_data = pd.read_parquet(data_path)
-                elif data_path.endswith(".json"):
-                    test_data = pd.read_json(data_path)
-                elif data_path.endswith((".xlsx", ".xls")):
-                    test_data = pd.read_excel(data_path)
-                else:
-                    test_data = pd.read_csv(data_path)
+                test_data = load_dataframe(data_path)
 
                 # Add data shape info to job_config for logging
                 if test_data is not None:

@@ -15,15 +15,8 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-class DominoModelAPI:
-    """Client for Domino Model Serving API.
-
-    Provides methods to:
-    - List, create, and manage Model APIs (endpoint definitions)
-    - List, create, and manage Model API Versions
-    - Manage Model Deployments (start, stop, scale)
-    - Access deployment logs and credentials
-    """
+class DominoModelAPIClient:
+    """Base client for Domino Model Serving API with HTTP request handling."""
 
     def __init__(self):
         self.settings = get_settings()
@@ -102,28 +95,27 @@ class DominoModelAPI:
             await self._client.aclose()
             self._client = None
 
-    # ========== Model APIs (Endpoint Definitions) ==========
-
-    async def list_model_apis(self, project_id: Optional[str] = None) -> Dict[str, Any]:
-        """List all Model APIs.
-
-        GET /api/modelServing/v1/modelApis
-        """
+    async def _make_request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Make an HTTP request to the Domino API."""
         try:
             client = await self._get_client()
         except ValueError as e:
-            # Domino API not configured - return empty list gracefully
             logger.warning(f"Domino API not configured: {e}")
             return {"success": True, "data": [], "warning": str(e)}
 
-        params = {}
-        if project_id:
-            params["projectId"] = project_id
-        elif self.settings.domino_project_id:
-            params["projectId"] = self.settings.domino_project_id
-
         try:
-            response = await client.get("/api/modelServing/v1/modelApis", params=params)
+            response = await client.request(
+                method=method,
+                url=path,
+                params=params,
+                json=json_data,
+            )
             response.raise_for_status()
 
             # Check if response is HTML (authentication error)
@@ -132,13 +124,45 @@ class DominoModelAPI:
                 logger.error("Received HTML response - likely authentication issue")
                 return {"success": True, "data": [], "warning": "Authentication required for Domino API"}
 
-            # Domino API returns {"items": [...], "metadata": {...}}
+            # Parse response
+            if method == "DELETE":
+                return {"success": True, "message": f"Resource deleted successfully"}
+
             result = response.json()
-            items = result.get("items", []) if isinstance(result, dict) else result
-            return {"success": True, "data": items}
+            return {"success": True, "data": result}
         except Exception as e:
-            logger.error(f"Error listing model APIs: {e}")
-            return {"success": True, "data": [], "error": str(e)}
+            logger.error(f"Error making request to {path}: {e}")
+            return {"success": False, "error": str(e)}
+
+
+class ModelAPIManager:
+    """Manages Model API resources (endpoint definitions)."""
+
+    def __init__(self, client: DominoModelAPIClient):
+        self.client = client
+
+    # ========== Model APIs (Endpoint Definitions) ==========
+
+    async def list_model_apis(self, project_id: Optional[str] = None) -> Dict[str, Any]:
+        """List all Model APIs.
+
+        GET /api/modelServing/v1/modelApis
+        """
+        params = {}
+        if project_id:
+            params["projectId"] = project_id
+        elif self.client.settings.domino_project_id:
+            params["projectId"] = self.client.settings.domino_project_id
+
+        result = await self.client._make_request("GET", "/api/modelServing/v1/modelApis", params=params)
+
+        # Extract items from Domino API response format
+        if result.get("success") and "data" in result:
+            data = result["data"]
+            if isinstance(data, dict) and "items" in data:
+                result["data"] = data.get("items", [])
+
+        return result
 
     async def create_model_api(
         self,
@@ -151,38 +175,22 @@ class DominoModelAPI:
 
         POST /api/modelServing/v1/modelApis
         """
-        client = await self._get_client()
-
         payload = {
             "name": name,
             "description": description,
-            "projectId": project_id or self.settings.domino_project_id,
+            "projectId": project_id or self.client.settings.domino_project_id,
         }
         if owner_id:
             payload["ownerId"] = owner_id
 
-        try:
-            response = await client.post("/api/modelServing/v1/modelApis", json=payload)
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error creating model API: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("POST", "/api/modelServing/v1/modelApis", json_data=payload)
 
     async def get_model_api(self, model_api_id: str) -> Dict[str, Any]:
         """Get a specific Model API.
 
         GET /api/modelServing/v1/modelApis/{modelApiId}
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.get(f"/api/modelServing/v1/modelApis/{model_api_id}")
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error getting model API: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("GET", f"/api/modelServing/v1/modelApis/{model_api_id}")
 
     async def update_model_api(
         self,
@@ -194,39 +202,30 @@ class DominoModelAPI:
 
         PUT /api/modelServing/v1/modelApis/{modelApiId}
         """
-        client = await self._get_client()
-
         payload = {}
         if name:
             payload["name"] = name
         if description is not None:
             payload["description"] = description
 
-        try:
-            response = await client.put(
-                f"/api/modelServing/v1/modelApis/{model_api_id}",
-                json=payload
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error updating model API: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("PUT", f"/api/modelServing/v1/modelApis/{model_api_id}", json_data=payload)
 
     async def delete_model_api(self, model_api_id: str) -> Dict[str, Any]:
         """Delete a Model API.
 
         DELETE /api/modelServing/v1/modelApis/{modelApiId}
         """
-        client = await self._get_client()
+        result = await self.client._make_request("DELETE", f"/api/modelServing/v1/modelApis/{model_api_id}")
+        if result.get("success"):
+            result["message"] = f"Model API {model_api_id} deleted"
+        return result
 
-        try:
-            response = await client.delete(f"/api/modelServing/v1/modelApis/{model_api_id}")
-            response.raise_for_status()
-            return {"success": True, "message": f"Model API {model_api_id} deleted"}
-        except Exception as e:
-            logger.error(f"Error deleting model API: {e}")
-            return {"success": False, "error": str(e)}
+
+class ModelVersionManager:
+    """Manages Model API Version resources."""
+
+    def __init__(self, client: DominoModelAPIClient):
+        self.client = client
 
     # ========== Model API Versions ==========
 
@@ -235,17 +234,7 @@ class DominoModelAPI:
 
         GET /api/modelServing/v1/modelApis/{modelApiId}/versions
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.get(
-                f"/api/modelServing/v1/modelApis/{model_api_id}/versions"
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error listing model API versions: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("GET", f"/api/modelServing/v1/modelApis/{model_api_id}/versions")
 
     async def create_model_api_version(
         self,
@@ -259,8 +248,6 @@ class DominoModelAPI:
 
         POST /api/modelServing/v1/modelApis/{modelApiId}/versions
         """
-        client = await self._get_client()
-
         payload = {
             "modelFile": model_file,
             "function": function_name,
@@ -269,16 +256,7 @@ class DominoModelAPI:
         if environment_id:
             payload["environmentId"] = environment_id
 
-        try:
-            response = await client.post(
-                f"/api/modelServing/v1/modelApis/{model_api_id}/versions",
-                json=payload
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error creating model API version: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("POST", f"/api/modelServing/v1/modelApis/{model_api_id}/versions", json_data=payload)
 
     async def get_model_api_version(
         self,
@@ -289,17 +267,7 @@ class DominoModelAPI:
 
         GET /api/modelServing/v1/modelApis/{modelApiId}/versions/{modelApiVersionId}
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.get(
-                f"/api/modelServing/v1/modelApis/{model_api_id}/versions/{version_id}"
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error getting model API version: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("GET", f"/api/modelServing/v1/modelApis/{model_api_id}/versions/{version_id}")
 
     async def get_version_build_logs(
         self,
@@ -310,9 +278,8 @@ class DominoModelAPI:
 
         GET /api/modelServing/v1/modelApis/{modelApiId}/versions/{versionId}/buildLogs
         """
-        client = await self._get_client()
-
         try:
+            client = await self.client._get_client()
             response = await client.get(
                 f"/api/modelServing/v1/modelApis/{model_api_id}/versions/{version_id}/buildLogs"
             )
@@ -321,6 +288,13 @@ class DominoModelAPI:
         except Exception as e:
             logger.error(f"Error getting build logs: {e}")
             return {"success": False, "error": str(e)}
+
+
+class ModelDeploymentManager:
+    """Manages Model Deployment resources."""
+
+    def __init__(self, client: DominoModelAPIClient):
+        self.client = client
 
     # ========== Model Deployments ==========
 
@@ -333,41 +307,23 @@ class DominoModelAPI:
 
         GET /api/modelServing/v1/modelDeployments
         """
-        try:
-            client = await self._get_client()
-        except ValueError as e:
-            # Domino API not configured - return empty list gracefully
-            logger.warning(f"Domino API not configured: {e}")
-            return {"success": True, "data": [], "warning": str(e)}
-
         params = {}
         if project_id:
             params["projectId"] = project_id
-        elif self.settings.domino_project_id:
-            params["projectId"] = self.settings.domino_project_id
+        elif self.client.settings.domino_project_id:
+            params["projectId"] = self.client.settings.domino_project_id
         if model_api_id:
             params["modelApiId"] = model_api_id
 
-        try:
-            response = await client.get(
-                "/api/modelServing/v1/modelDeployments",
-                params=params
-            )
-            response.raise_for_status()
+        result = await self.client._make_request("GET", "/api/modelServing/v1/modelDeployments", params=params)
 
-            # Check if response is HTML (authentication error)
-            content_type = response.headers.get("content-type", "")
-            if "text/html" in content_type:
-                logger.error("Received HTML response - likely authentication issue")
-                return {"success": True, "data": [], "warning": "Authentication required for Domino API"}
+        # Extract items from Domino API response format
+        if result.get("success") and "data" in result:
+            data = result["data"]
+            if isinstance(data, dict) and "items" in data:
+                result["data"] = data.get("items", [])
 
-            # Domino API returns {"items": [...], "metadata": {...}}
-            result = response.json()
-            items = result.get("items", []) if isinstance(result, dict) else result
-            return {"success": True, "data": items}
-        except Exception as e:
-            logger.error(f"Error listing deployments: {e}")
-            return {"success": True, "data": [], "error": str(e)}
+        return result
 
     async def create_deployment(
         self,
@@ -384,8 +340,6 @@ class DominoModelAPI:
 
         POST /api/modelServing/v1/modelDeployments
         """
-        client = await self._get_client()
-
         payload = {
             "modelApiId": model_api_id,
             "modelApiVersionId": model_api_version_id,
@@ -401,33 +355,14 @@ class DominoModelAPI:
         if hardware_tier_id:
             payload["hardwareTierId"] = hardware_tier_id
 
-        try:
-            response = await client.post(
-                "/api/modelServing/v1/modelDeployments",
-                json=payload
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error creating deployment: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("POST", "/api/modelServing/v1/modelDeployments", json_data=payload)
 
     async def get_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Get a specific Model Deployment.
 
         GET /api/modelServing/v1/modelDeployments/{modelDeploymentId}
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.get(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}"
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error getting deployment: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("GET", f"/api/modelServing/v1/modelDeployments/{deployment_id}")
 
     async def update_deployment(
         self,
@@ -440,8 +375,6 @@ class DominoModelAPI:
 
         PATCH /api/modelServing/v1/modelDeployments/{modelDeploymentId}
         """
-        client = await self._get_client()
-
         payload = {}
         if min_replicas is not None:
             payload["minReplicas"] = min_replicas
@@ -450,77 +383,45 @@ class DominoModelAPI:
         if model_api_version_id:
             payload["modelApiVersionId"] = model_api_version_id
 
-        try:
-            response = await client.patch(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}",
-                json=payload
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error updating deployment: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("PATCH", f"/api/modelServing/v1/modelDeployments/{deployment_id}", json_data=payload)
 
     async def delete_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Delete a Model Deployment.
 
         DELETE /api/modelServing/v1/modelDeployments/{modelDeploymentId}
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.delete(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}"
-            )
-            response.raise_for_status()
-            return {"success": True, "message": f"Deployment {deployment_id} deleted"}
-        except Exception as e:
-            logger.error(f"Error deleting deployment: {e}")
-            return {"success": False, "error": str(e)}
+        result = await self.client._make_request("DELETE", f"/api/modelServing/v1/modelDeployments/{deployment_id}")
+        if result.get("success"):
+            result["message"] = f"Deployment {deployment_id} deleted"
+        return result
 
     async def start_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Start a stopped Model Deployment.
 
         POST /api/modelServing/v1/modelDeployments/{modelDeploymentId}/start
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.post(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}/start"
-            )
-            response.raise_for_status()
-            return {
-                "success": True,
+        result = await self.client._make_request("POST", f"/api/modelServing/v1/modelDeployments/{deployment_id}/start")
+        if result.get("success"):
+            result.update({
                 "deployment_id": deployment_id,
                 "status": "starting",
                 "message": "Deployment start initiated"
-            }
-        except Exception as e:
-            logger.error(f"Error starting deployment: {e}")
-            return {"success": False, "error": str(e)}
+            })
+        return result
 
     async def stop_deployment(self, deployment_id: str) -> Dict[str, Any]:
         """Stop a running Model Deployment.
 
         POST /api/modelServing/v1/modelDeployments/{modelDeploymentId}/stop
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.post(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}/stop"
-            )
-            response.raise_for_status()
-            return {
-                "success": True,
+        result = await self.client._make_request("POST", f"/api/modelServing/v1/modelDeployments/{deployment_id}/stop")
+        if result.get("success"):
+            result.update({
                 "deployment_id": deployment_id,
                 "status": "stopping",
                 "message": "Deployment stop initiated"
-            }
-        except Exception as e:
-            logger.error(f"Error stopping deployment: {e}")
-            return {"success": False, "error": str(e)}
+            })
+        return result
 
     async def get_deployment_logs(
         self,
@@ -533,9 +434,8 @@ class DominoModelAPI:
 
         logSuffix can be 'stdout', 'stderr', etc.
         """
-        client = await self._get_client()
-
         try:
+            client = await self.client._get_client()
             response = await client.get(
                 f"/api/modelServing/v1/modelDeployments/{deployment_id}/logs/{log_suffix}"
             )
@@ -550,17 +450,7 @@ class DominoModelAPI:
 
         GET /api/modelServing/v1/modelDeployments/{modelDeploymentId}/versions
         """
-        client = await self._get_client()
-
-        try:
-            response = await client.get(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}/versions"
-            )
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error getting deployment versions: {e}")
-            return {"success": False, "error": str(e)}
+        return await self.client._make_request("GET", f"/api/modelServing/v1/modelDeployments/{deployment_id}/versions")
 
     async def get_deployment_credentials(
         self,
@@ -572,20 +462,134 @@ class DominoModelAPI:
         GET /api/modelServing/v1/modelDeployments/{modelDeploymentId}/credentials
         GET /api/modelServing/v1/modelDeployments/{modelDeploymentId}/credentials/{operationType}
         """
-        client = await self._get_client()
+        if operation_type:
+            url = f"/api/modelServing/v1/modelDeployments/{deployment_id}/credentials/{operation_type}"
+        else:
+            url = f"/api/modelServing/v1/modelDeployments/{deployment_id}/credentials"
 
-        try:
-            if operation_type:
-                url = f"/api/modelServing/v1/modelDeployments/{deployment_id}/credentials/{operation_type}"
-            else:
-                url = f"/api/modelServing/v1/modelDeployments/{deployment_id}/credentials"
+        return await self.client._make_request("GET", url)
 
-            response = await client.get(url)
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
-        except Exception as e:
-            logger.error(f"Error getting deployment credentials: {e}")
-            return {"success": False, "error": str(e)}
+    async def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
+        """Get the current status of a deployment."""
+        result = await self.get_deployment(deployment_id)
+        if result["success"]:
+            data = result["data"]
+            return {
+                "success": True,
+                "deployment_id": deployment_id,
+                "status": data.get("status"),
+                "replicas": {
+                    "min": data.get("minReplicas"),
+                    "max": data.get("maxReplicas"),
+                    "current": data.get("currentReplicas"),
+                },
+                "url": data.get("url"),
+                "created_at": data.get("createdAt"),
+                "updated_at": data.get("updatedAt"),
+            }
+        return result
+
+
+class DominoModelAPI:
+    """Main Domino Model API client that delegates to specialized managers.
+
+    Provides methods to:
+    - List, create, and manage Model APIs (endpoint definitions)
+    - List, create, and manage Model API Versions
+    - Manage Model Deployments (start, stop, scale)
+    - Access deployment logs and credentials
+    """
+
+    def __init__(self):
+        self._client = DominoModelAPIClient()
+        self.model_apis = ModelAPIManager(self._client)
+        self.versions = ModelVersionManager(self._client)
+        self.deployments = ModelDeploymentManager(self._client)
+
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.close()
+
+    # Convenience methods that delegate to managers
+    async def list_model_apis(self, project_id: Optional[str] = None) -> Dict[str, Any]:
+        """List all Model APIs."""
+        return await self.model_apis.list_model_apis(project_id)
+
+    async def create_model_api(self, name: str, description: str = "", project_id: Optional[str] = None, owner_id: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new Model API."""
+        return await self.model_apis.create_model_api(name, description, project_id, owner_id)
+
+    async def get_model_api(self, model_api_id: str) -> Dict[str, Any]:
+        """Get a specific Model API."""
+        return await self.model_apis.get_model_api(model_api_id)
+
+    async def update_model_api(self, model_api_id: str, name: Optional[str] = None, description: Optional[str] = None) -> Dict[str, Any]:
+        """Update a Model API."""
+        return await self.model_apis.update_model_api(model_api_id, name, description)
+
+    async def delete_model_api(self, model_api_id: str) -> Dict[str, Any]:
+        """Delete a Model API."""
+        return await self.model_apis.delete_model_api(model_api_id)
+
+    async def list_model_api_versions(self, model_api_id: str) -> Dict[str, Any]:
+        """List all versions of a Model API."""
+        return await self.versions.list_model_api_versions(model_api_id)
+
+    async def create_model_api_version(self, model_api_id: str, model_file: str, function_name: str, environment_id: Optional[str] = None, description: str = "") -> Dict[str, Any]:
+        """Create a new version of a Model API."""
+        return await self.versions.create_model_api_version(model_api_id, model_file, function_name, environment_id, description)
+
+    async def get_model_api_version(self, model_api_id: str, version_id: str) -> Dict[str, Any]:
+        """Get a specific version of a Model API."""
+        return await self.versions.get_model_api_version(model_api_id, version_id)
+
+    async def get_version_build_logs(self, model_api_id: str, version_id: str) -> Dict[str, Any]:
+        """Get build logs for a Model API version."""
+        return await self.versions.get_version_build_logs(model_api_id, version_id)
+
+    async def list_deployments(self, project_id: Optional[str] = None, model_api_id: Optional[str] = None) -> Dict[str, Any]:
+        """List all Model Deployments."""
+        return await self.deployments.list_deployments(project_id, model_api_id)
+
+    async def create_deployment(self, model_api_id: str, model_api_version_id: str, name: Optional[str] = None, description: str = "", environment_id: Optional[str] = None, hardware_tier_id: Optional[str] = None, min_replicas: int = 1, max_replicas: int = 1) -> Dict[str, Any]:
+        """Create a new Model Deployment."""
+        return await self.deployments.create_deployment(model_api_id, model_api_version_id, name, description, environment_id, hardware_tier_id, min_replicas, max_replicas)
+
+    async def get_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Get a specific Model Deployment."""
+        return await self.deployments.get_deployment(deployment_id)
+
+    async def update_deployment(self, deployment_id: str, min_replicas: Optional[int] = None, max_replicas: Optional[int] = None, model_api_version_id: Optional[str] = None) -> Dict[str, Any]:
+        """Update a Model Deployment."""
+        return await self.deployments.update_deployment(deployment_id, min_replicas, max_replicas, model_api_version_id)
+
+    async def delete_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Delete a Model Deployment."""
+        return await self.deployments.delete_deployment(deployment_id)
+
+    async def start_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Start a stopped Model Deployment."""
+        return await self.deployments.start_deployment(deployment_id)
+
+    async def stop_deployment(self, deployment_id: str) -> Dict[str, Any]:
+        """Stop a running Model Deployment."""
+        return await self.deployments.stop_deployment(deployment_id)
+
+    async def get_deployment_logs(self, deployment_id: str, log_suffix: str = "stdout") -> Dict[str, Any]:
+        """Get logs for a Model Deployment."""
+        return await self.deployments.get_deployment_logs(deployment_id, log_suffix)
+
+    async def get_deployment_versions(self, deployment_id: str) -> Dict[str, Any]:
+        """Get all versions of a Model Deployment."""
+        return await self.deployments.get_deployment_versions(deployment_id)
+
+    async def get_deployment_credentials(self, deployment_id: str, operation_type: Optional[str] = None) -> Dict[str, Any]:
+        """Get temporary credentials for a Model Deployment."""
+        return await self.deployments.get_deployment_credentials(deployment_id, operation_type)
+
+    async def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
+        """Get the current status of a deployment."""
+        return await self.deployments.get_deployment_status(deployment_id)
 
     # ========== Helper Methods ==========
 
@@ -676,26 +680,6 @@ class DominoModelAPI:
             logger.error(f"Error in deploy_model: {e}")
             result["error"] = str(e)
 
-        return result
-
-    async def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
-        """Get the current status of a deployment."""
-        result = await self.get_deployment(deployment_id)
-        if result["success"]:
-            data = result["data"]
-            return {
-                "success": True,
-                "deployment_id": deployment_id,
-                "status": data.get("status"),
-                "replicas": {
-                    "min": data.get("minReplicas"),
-                    "max": data.get("maxReplicas"),
-                    "current": data.get("currentReplicas"),
-                },
-                "url": data.get("url"),
-                "created_at": data.get("createdAt"),
-                "updated_at": data.get("updatedAt"),
-            }
         return result
 
 

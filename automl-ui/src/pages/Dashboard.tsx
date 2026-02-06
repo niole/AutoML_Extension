@@ -11,61 +11,12 @@ import {
 } from '@heroicons/react/24/outline'
 import { useJobs, useDeleteJob } from '../hooks/useJobs'
 import Spinner from '../components/common/Spinner'
-import Button from '../components/common/Button'
 import Dropdown from '../components/common/Dropdown'
-import { Job, JobStatus } from '../types/job'
-
-// Helper to notify parent frame about modal state
-function notifyModalOpen() {
-  window.parent.postMessage({ type: 'domino-modal-open' }, '*')
-}
-
-function notifyModalClose() {
-  window.parent.postMessage({ type: 'domino-modal-close' }, '*')
-}
+import { ConfirmDialog } from '../components/common/ConfirmDialog'
+import { Job } from '../types/job'
+import { formatDuration, getStatusColor, getStatusIcon } from '../utils/formatters'
 
 type ViewMode = 'table' | 'card'
-
-function getStatusIcon(status: JobStatus) {
-  // Running: Green circular arrow (sync/refresh icon)
-  if (status === 'running') return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-    </svg>
-  )
-  // Completed: Green checkmark in circle
-  if (status === 'completed') return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-  // Failed: Warning triangle
-  if (status === 'failed') return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-  )
-  // Cancelled/Stopped: X icon
-  if (status === 'cancelled') return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  )
-  // Pending: Clock/circle icon
-  return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-    </svg>
-  )
-}
-
-function getStatusColor(status: JobStatus) {
-  if (status === 'running') return 'text-domino-accent-green'
-  if (status === 'completed') return 'text-domino-accent-green'
-  if (status === 'failed') return 'text-domino-accent-red'
-  return 'text-domino-text-muted'
-}
 
 function getDisplayStatus(job: Job): string {
   if (job.status === 'completed' && job.is_registered) return 'Deployed'
@@ -73,23 +24,8 @@ function getDisplayStatus(job: Job): string {
 }
 
 function getDuration(job: Job): string {
-  // Only show duration for completed/failed/cancelled jobs with valid timestamps
   if (!['completed', 'failed', 'cancelled'].includes(job.status)) return '—'
-  if (!job.started_at || !job.completed_at) return '—'
-
-  const start = new Date(job.started_at).getTime()
-  const end = new Date(job.completed_at).getTime()
-  const seconds = Math.floor((end - start) / 1000)
-
-  // Handle invalid duration (negative or unreasonably large)
-  if (seconds < 0 || seconds > 86400 * 365) return '—'
-
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  if (minutes < 60) return `${minutes}m ${secs}s`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m`
+  return formatDuration(job.started_at, job.completed_at)
 }
 
 function getBestModel(job: Job): string {
@@ -247,11 +183,15 @@ function Dashboard() {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmJob && (
-        <DeleteConfirmModal
-          job={deleteConfirmJob}
+        <ConfirmDialog
+          isOpen={true}
+          onClose={() => setDeleteConfirmJob(null)}
           onConfirm={() => handleDeleteJob(deleteConfirmJob)}
-          onCancel={() => setDeleteConfirmJob(null)}
-          isDeleting={deleteJobMutation.isPending}
+          title="Delete Job"
+          message={`Are you sure you want to delete "${deleteConfirmJob.name}"? This action cannot be undone.`}
+          confirmLabel={deleteJobMutation.isPending ? 'Deleting...' : 'Delete'}
+          variant="danger"
+          isLoading={deleteJobMutation.isPending}
         />
       )}
 
@@ -524,60 +464,6 @@ function ActionsDropdown({ isOpen, onToggle, onClose, onDelete }: ActionsDropdow
           </button>
         </div>
       )}
-    </div>
-  )
-}
-
-// Delete Confirmation Modal
-interface DeleteConfirmModalProps {
-  job: Job
-  onConfirm: () => void
-  onCancel: () => void
-  isDeleting: boolean
-}
-
-function DeleteConfirmModal({ job, onConfirm, onCancel, isDeleting }: DeleteConfirmModalProps) {
-  // Notify parent frame about modal open/close
-  useEffect(() => {
-    notifyModalOpen()
-    return () => {
-      notifyModalClose()
-    }
-  }, [])
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
-      <div className="bg-white max-w-md w-full mx-4 flex flex-col rounded-sm shadow-lg">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4">
-          <h3 id="delete-modal-title" className="text-xl font-semibold text-domino-text-primary">Delete Job</h3>
-          <button
-            onClick={onCancel}
-            className="w-8 h-8 flex items-center justify-center text-domino-text-muted hover:text-domino-text-primary transition-colors rounded-full hover:bg-domino-bg-tertiary"
-            aria-label="Close dialog"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        {/* Content */}
-        <div className="px-6 pb-4">
-          <p className="text-sm text-domino-text-secondary">
-            Are you sure you want to delete <span className="font-medium text-domino-text-primary">"{job.name}"</span>?
-            This action cannot be undone.
-          </p>
-        </div>
-        {/* Footer */}
-        <div className="flex justify-end items-center gap-4 px-6 py-4 border-t border-domino-border">
-          <button onClick={onCancel} className="text-sm font-medium text-domino-accent-purple hover:underline">
-            Cancel
-          </button>
-          <Button variant="primary" onClick={onConfirm} disabled={isDeleting}>
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }
