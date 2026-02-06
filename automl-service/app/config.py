@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Database
-    database_url: str = "sqlite:///./automl.db"
+    database_url: str = ""
 
     # Paths - /mnt paths for Domino, ./local_data for local dev
     models_path: str = ""
@@ -28,6 +28,7 @@ class Settings(BaseSettings):
         """Set path defaults based on environment (Domino vs local)."""
         is_domino = os.path.isdir("/mnt/data") or os.environ.get("DOMINO_RUN_ID")
         defaults = {
+            "database_url": "sqlite:////mnt/data/automl.db" if is_domino else "sqlite:///./automl.db",
             "models_path": "/mnt/data/models" if is_domino else "./local_data/models",
             "temp_path": "/mnt/automl-service/uploads" if is_domino else "./local_data/temp",
             "datasets_path": "/mnt/data/datasets" if is_domino else "./local_data/datasets",
