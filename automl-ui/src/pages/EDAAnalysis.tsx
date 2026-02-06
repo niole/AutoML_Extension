@@ -23,7 +23,7 @@ function EDAAnalysis() {
     tsProfile, tsLoading, tsError, profileTimeSeries,
   } = useProfiling()
 
-  const [sourceType, setSourceType] = useState<'upload' | 'dataset'>('dataset')
+  const [sourceType, setSourceType] = useState<'upload' | 'dataset'>('upload')
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
