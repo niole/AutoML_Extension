@@ -18,11 +18,24 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./automl.db"
 
-    # Paths - use persistent /mnt paths that survive container restarts
-    models_path: str = "/mnt/data/models"
-    temp_path: str = "/mnt/automl-service/uploads"  # Changed from /tmp/automl
-    datasets_path: str = "/mnt/data/datasets"
-    uploads_path: str = "/mnt/automl-service/uploads"
+    # Paths - /mnt paths for Domino, ./local_data for local dev
+    models_path: str = ""
+    temp_path: str = ""
+    datasets_path: str = ""
+    uploads_path: str = ""
+
+    def model_post_init(self, __context):
+        """Set path defaults based on environment (Domino vs local)."""
+        is_domino = os.path.isdir("/mnt/data") or os.environ.get("DOMINO_RUN_ID")
+        defaults = {
+            "models_path": "/mnt/data/models" if is_domino else "./local_data/models",
+            "temp_path": "/mnt/automl-service/uploads" if is_domino else "./local_data/temp",
+            "datasets_path": "/mnt/data/datasets" if is_domino else "./local_data/datasets",
+            "uploads_path": "/mnt/automl-service/uploads" if is_domino else "./local_data/uploads",
+        }
+        for field, default in defaults.items():
+            if not getattr(self, field):
+                object.__setattr__(self, field, default)
 
     # Domino environment (auto-populated in Domino)
     domino_api_key: Optional[str] = None  # DOMINO_API_KEY for REST API access

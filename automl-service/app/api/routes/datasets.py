@@ -16,9 +16,6 @@ from app.api.error_handler import handle_errors
 
 logger = logging.getLogger(__name__)
 
-# Log when this module is loaded to verify which version is running
-logger.info("[DATASETS MODULE] Loaded - upload_dir will be /mnt/automl-service/uploads")
-print("[DATASETS MODULE] Loaded - upload_dir will be /mnt/automl-service/uploads", flush=True)
 from app.dependencies import get_db
 from app.core.dataset_manager import DominoDatasetManager
 from app.api.schemas.dataset import (
@@ -184,13 +181,8 @@ async def upload_file(
             detail=f"File type not supported. Allowed: {allowed_extensions}",
         )
 
-    # Save file to persistent location with unique prefix to avoid collisions
-    # HARDCODED to bypass any settings caching issues
-    upload_dir = "/mnt/automl-service/uploads"
+    upload_dir = get_settings().uploads_path
     os.makedirs(upload_dir, exist_ok=True)
-
-    # DEBUG: Log the upload directory being used
-    logger.info(f"[UPLOAD] Using hardcoded upload_dir: {upload_dir}")
 
     # Add unique prefix to avoid filename collisions
     unique_id = str(uuid.uuid4())[:8]

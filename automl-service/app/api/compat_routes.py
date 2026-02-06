@@ -261,7 +261,8 @@ def register_compat_routes(app: FastAPI):
                 detail=f"File type not supported. Allowed: {allowed_extensions}",
             )
 
-        upload_dir = "/mnt/automl-service/uploads"
+        from app.config import get_settings
+        upload_dir = get_settings().uploads_path
         os.makedirs(upload_dir, exist_ok=True)
         unique_id = str(uuid.uuid4())[:8]
         safe_filename = f"{unique_id}_{file.filename}"
