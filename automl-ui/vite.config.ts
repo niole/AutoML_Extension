@@ -29,6 +29,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/svc': {
+          target: apiTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     preview: {
