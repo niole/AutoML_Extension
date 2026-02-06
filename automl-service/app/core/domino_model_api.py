@@ -6,6 +6,7 @@ API Reference: https://docs.dominodatalab.com/en/latest/api_guide/8c929e/rest-ap
 
 import os
 import logging
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 import httpx
@@ -683,13 +684,7 @@ class DominoModelAPI:
         return result
 
 
-# Singleton instance
-_domino_model_api: Optional[DominoModelAPI] = None
-
-
+@lru_cache()
 def get_domino_model_api() -> DominoModelAPI:
-    """Get the Domino Model API singleton."""
-    global _domino_model_api
-    if _domino_model_api is None:
-        _domino_model_api = DominoModelAPI()
-    return _domino_model_api
+    """Get the Domino Model API singleton (cached)."""
+    return DominoModelAPI()

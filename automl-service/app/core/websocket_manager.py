@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from functools import lru_cache
 from typing import Dict, Set
 from fastapi import WebSocket
 
@@ -154,13 +155,7 @@ class ConnectionManager:
         return sum(len(conns) for conns in self.active_connections.values())
 
 
-# Global singleton instance
-_manager = None
-
-
+@lru_cache()
 def get_websocket_manager() -> ConnectionManager:
-    """Get the global WebSocket connection manager."""
-    global _manager
-    if _manager is None:
-        _manager = ConnectionManager()
-    return _manager
+    """Get the global WebSocket connection manager (cached)."""
+    return ConnectionManager()

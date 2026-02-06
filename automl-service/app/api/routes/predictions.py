@@ -1,8 +1,9 @@
 """Prediction and inference endpoints."""
 
+import inspect
 import os
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
@@ -12,33 +13,67 @@ from app.core.prediction_service import get_prediction_service
 from app.core.model_diagnostics import get_model_diagnostics
 from app.core.domino_registry import get_domino_registry
 from app.dependencies import get_db
-from app.db import crud
+from app.api.utils import get_job_paths
+from app.api.error_handler import handle_errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def get_job_paths(db: AsyncSession, job_id: str) -> Tuple[str, str, str, Optional[str]]:
-    """
-    Look up a job and return (model_path, model_type, file_path, problem_type).
-    Raises HTTPException if job not found or model_path not available.
-    """
-    job = await crud.get_job(db, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+async def _run_diagnostics(
+    db: AsyncSession,
+    job_id: str,
+    diagnostics_method: str,
+    model_type_override: Optional[str] = None,
+    data_path_override: Optional[str] = None,
+    require_data_path: bool = True,
+    extra_kwargs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Shared helper that handles the common diagnostics flow.
 
-    if not job.model_path:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Job {job_id} has no trained model. Status: {job.status.value}"
-        )
+    1. Resolve job paths from the database
+    2. Apply any request-level overrides for model_type / data_path
+    3. Optionally enforce that a data_path is available
+    4. Delegate to the named method on ModelDiagnostics
+    5. Return the raw result dict
 
-    return (
-        job.model_path,
-        job.model_type.value,
-        job.file_path,
-        job.problem_type.value if job.problem_type else None
-    )
+    Args:
+        db: Async database session.
+        job_id: The training job ID to look up.
+        diagnostics_method: Name of the method to call on ModelDiagnostics
+            (e.g. "get_confusion_matrix").
+        model_type_override: Optional model_type from the request body.
+        data_path_override: Optional data_path from the request body.
+        require_data_path: If True, raise 400 when no data path is available.
+        extra_kwargs: Any additional keyword arguments forwarded to the
+            diagnostics method.
+
+    Returns:
+        The dict returned by the diagnostics method.
+    """
+    model_path, model_type, file_path, _ = await get_job_paths(db, job_id)
+
+    actual_model_type = model_type_override or model_type
+    actual_data_path = data_path_override or file_path
+
+    if require_data_path and not actual_data_path:
+        raise HTTPException(status_code=400, detail="No data path available for this job")
+
+    diagnostics = get_model_diagnostics()
+    method = getattr(diagnostics, diagnostics_method)
+
+    # Build kwargs, only including data_path if the method accepts it
+    kwargs: Dict[str, Any] = {
+        "model_path": model_path,
+        "model_type": actual_model_type,
+    }
+    method_params = inspect.signature(method).parameters
+    if "data_path" in method_params and actual_data_path is not None:
+        kwargs["data_path"] = actual_data_path
+    if extra_kwargs:
+        kwargs.update(extra_kwargs)
+
+    return method(**kwargs)
 
 
 class PredictRequest(BaseModel):
@@ -146,70 +181,61 @@ class RegressionDiagnosticsResponse(BaseModel):
 
 
 @router.post("/predict", response_model=PredictResponse)
+@handle_errors("Prediction error")
 async def predict(request: PredictRequest):
     """Run predictions on data using a trained model."""
     service = get_prediction_service()
 
-    try:
-        # For time series, allow forecasting without input data
-        if request.model_type == "timeseries" and not request.data and not request.file_path:
-            result = service.forecast(
-                model_id=request.model_id,
-                prediction_length=request.prediction_length
-            )
-        elif request.data:
-            result = service.predict(
-                model_id=request.model_id,
-                model_type=request.model_type,
-                data=request.data,
-                return_probabilities=request.return_probabilities
-            )
-        elif request.file_path:
-            result = service.predict_from_file(
-                model_id=request.model_id,
-                model_type=request.model_type,
-                file_path=request.file_path,
-                return_probabilities=request.return_probabilities
-            )
-        else:
-            raise HTTPException(status_code=400, detail="Either data or file_path is required")
+    # For time series, allow forecasting without input data
+    if request.model_type == "timeseries" and not request.data and not request.file_path:
+        result = service.forecast(
+            model_id=request.model_id,
+            prediction_length=request.prediction_length
+        )
+    elif request.data:
+        result = service.predict(
+            model_id=request.model_id,
+            model_type=request.model_type,
+            data=request.data,
+            return_probabilities=request.return_probabilities
+        )
+    elif request.file_path:
+        result = service.predict_from_file(
+            model_id=request.model_id,
+            model_type=request.model_type,
+            file_path=request.file_path,
+            return_probabilities=request.return_probabilities
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Either data or file_path is required")
 
-        return PredictResponse(**result)
-
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Prediction error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return PredictResponse(**result)
 
 
 @router.post("/predict/batch", response_model=BatchPredictResponse)
+@handle_errors("Batch prediction error")
 async def batch_predict(request: BatchPredictRequest):
     """Run batch predictions and save to file."""
     service = get_prediction_service()
 
-    try:
-        result = service.batch_predict(
-            model_id=request.model_id,
-            model_type=request.model_type,
-            input_file=request.input_file,
-            output_file=request.output_file,
-            return_probabilities=request.return_probabilities
-        )
+    result = service.batch_predict(
+        model_id=request.model_id,
+        model_type=request.model_type,
+        input_file=request.input_file,
+        output_file=request.output_file,
+        return_probabilities=request.return_probabilities
+    )
 
-        return BatchPredictResponse(
-            model_id=request.model_id,
-            output_file=result["output_file"],
-            output_rows=result["output_rows"],
-            success=True
-        )
-
-    except Exception as e:
-        logger.error(f"Batch prediction error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return BatchPredictResponse(
+        model_id=request.model_id,
+        output_file=result["output_file"],
+        output_rows=result["output_rows"],
+        success=True
+    )
 
 
 @router.get("/model/{model_id}/info", response_model=ModelInfoResponse)
+@handle_errors("Error getting model info")
 async def get_model_info(model_id: str, model_type: str):
     """Get information about a trained model."""
     service = get_prediction_service()
@@ -219,9 +245,6 @@ async def get_model_info(model_id: str, model_type: str):
         return ModelInfoResponse(**info)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
-    except Exception as e:
-        logger.error(f"Error getting model info: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/model/feature-importance", response_model=FeatureImportanceResponse)
@@ -230,18 +253,13 @@ async def get_feature_importance(
     db: AsyncSession = Depends(get_db)
 ):
     """Get feature importance for a trained model (identified by job_id)."""
-    # Look up job to get model_path and file_path
-    model_path, model_type, file_path, _ = await get_job_paths(db, request.job_id)
-
-    # Use request overrides if provided
-    actual_model_type = request.model_type or model_type
-    actual_data_path = request.data_path or file_path
-
-    diagnostics = get_model_diagnostics()
-    result = diagnostics.get_feature_importance(
-        model_path=model_path,
-        model_type=actual_model_type,
-        data_path=actual_data_path
+    result = await _run_diagnostics(
+        db,
+        job_id=request.job_id,
+        diagnostics_method="get_feature_importance",
+        model_type_override=request.model_type,
+        data_path_override=request.data_path,
+        require_data_path=False,
     )
 
     # Replace model_path with job_id in response
@@ -263,14 +281,13 @@ async def get_leaderboard(
     db: AsyncSession = Depends(get_db)
 ):
     """Get model leaderboard with comparison chart (identified by job_id)."""
-    # Look up job to get model_path
-    model_path, model_type, _, _ = await get_job_paths(db, request.job_id)
-
-    # Use request override if provided
-    actual_model_type = request.model_type or model_type
-
-    diagnostics = get_model_diagnostics()
-    result = diagnostics.get_leaderboard(model_path, actual_model_type)
+    result = await _run_diagnostics(
+        db,
+        job_id=request.job_id,
+        diagnostics_method="get_leaderboard",
+        model_type_override=request.model_type,
+        require_data_path=False,
+    )
     result["job_id"] = request.job_id
     return result
 
@@ -281,23 +298,13 @@ async def get_confusion_matrix(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate confusion matrix for classification models (identified by job_id)."""
-    # Look up job to get model_path and file_path
-    model_path, model_type, file_path, _ = await get_job_paths(db, request.job_id)
-
-    # Use request overrides if provided
-    actual_model_type = request.model_type or model_type
-    actual_data_path = request.data_path or file_path
-
-    if not actual_data_path:
-        raise HTTPException(status_code=400, detail="No data path available for this job")
-
-    diagnostics = get_model_diagnostics()
-    result = diagnostics.get_confusion_matrix(
-        model_path=model_path,
-        model_type=actual_model_type,
-        data_path=actual_data_path
+    result = await _run_diagnostics(
+        db,
+        job_id=request.job_id,
+        diagnostics_method="get_confusion_matrix",
+        model_type_override=request.model_type,
+        data_path_override=request.data_path,
     )
-
     return ConfusionMatrixResponse(**result)
 
 
@@ -307,23 +314,13 @@ async def get_roc_curve(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate ROC curve for binary classification (identified by job_id)."""
-    # Look up job to get model_path and file_path
-    model_path, model_type, file_path, _ = await get_job_paths(db, request.job_id)
-
-    # Use request overrides if provided
-    actual_model_type = request.model_type or model_type
-    actual_data_path = request.data_path or file_path
-
-    if not actual_data_path:
-        raise HTTPException(status_code=400, detail="No data path available for this job")
-
-    diagnostics = get_model_diagnostics()
-    result = diagnostics.get_roc_curve(
-        model_path=model_path,
-        model_type=actual_model_type,
-        data_path=actual_data_path
+    result = await _run_diagnostics(
+        db,
+        job_id=request.job_id,
+        diagnostics_method="get_roc_curve",
+        model_type_override=request.model_type,
+        data_path_override=request.data_path,
     )
-
     return ROCCurveResponse(**result)
 
 
@@ -333,21 +330,12 @@ async def get_precision_recall_curve(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate Precision-Recall curve for binary classification (identified by job_id)."""
-    # Look up job to get model_path and file_path
-    model_path, model_type, file_path, _ = await get_job_paths(db, request.job_id)
-
-    # Use request overrides if provided
-    actual_model_type = request.model_type or model_type
-    actual_data_path = request.data_path or file_path
-
-    if not actual_data_path:
-        raise HTTPException(status_code=400, detail="No data path available for this job")
-
-    diagnostics = get_model_diagnostics()
-    return diagnostics.get_precision_recall_curve(
-        model_path=model_path,
-        model_type=actual_model_type,
-        data_path=actual_data_path
+    return await _run_diagnostics(
+        db,
+        job_id=request.job_id,
+        diagnostics_method="get_precision_recall_curve",
+        model_type_override=request.model_type,
+        data_path_override=request.data_path,
     )
 
 
@@ -357,23 +345,13 @@ async def get_regression_diagnostics(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate diagnostic plots for regression models (identified by job_id)."""
-    # Look up job to get model_path and file_path
-    model_path, model_type, file_path, _ = await get_job_paths(db, request.job_id)
-
-    # Use request overrides if provided
-    actual_model_type = request.model_type or model_type
-    actual_data_path = request.data_path or file_path
-
-    if not actual_data_path:
-        raise HTTPException(status_code=400, detail="No data path available for this job")
-
-    diagnostics = get_model_diagnostics()
-    result = diagnostics.get_regression_diagnostics(
-        model_path=model_path,
-        model_type=actual_model_type,
-        data_path=actual_data_path
+    result = await _run_diagnostics(
+        db,
+        job_id=request.job_id,
+        diagnostics_method="get_regression_diagnostics",
+        model_type_override=request.model_type,
+        data_path_override=request.data_path,
     )
-
     return RegressionDiagnosticsResponse(**result)
 
 

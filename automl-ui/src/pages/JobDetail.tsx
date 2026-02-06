@@ -1,9 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { StopIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline'
 import { useJob, useJobStatus, useJobLogs, useCancelJob, useDeleteJob } from '../hooks/useJobs'
-import Badge from '../components/common/Badge'
 import { SimpleProgressBar } from '../components/training/TrainingProgressPanel'
 import { ModelDiagnosticsPanel } from '../components/diagnostics/ModelDiagnosticsPanel'
 import { LearningCurvesPanel } from '../components/diagnostics/LearningCurvesPanel'
@@ -13,10 +11,10 @@ import { TimeSeriesForecastPanel } from '../components/timeseries/TimeSeriesFore
 import { InteractiveLeaderboard } from '../components/leaderboard/InteractiveLeaderboard'
 import { ConfirmDialog } from '../components/common/ConfirmDialog'
 import { useJobProgress } from '../hooks/useJobProgress'
-import type { JobStatus } from '../types/job'
-import { formatDuration } from '../utils/formatters'
-
-type DetailTab = 'overview' | 'progress' | 'leaderboard' | 'diagnostics' | 'learning' | 'forecast' | 'export' | 'logs'
+import { JobHeader } from '../components/job/JobHeader'
+import { JobTabNavigation } from '../components/job/JobTabNavigation'
+import { JobOverviewTab } from '../components/job/JobOverviewTab'
+import type { DetailTab } from '../components/job/JobTabNavigation'
 
 function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -37,22 +35,6 @@ function JobDetail() {
 
   const navigate = useNavigate()
   const deleteJobMutation = useDeleteJob()
-  const registerDropdownRef = useRef<HTMLDivElement>(null)
-  const actionsDropdownRef = useRef<HTMLDivElement>(null)
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (registerDropdownRef.current && !registerDropdownRef.current.contains(event.target as Node)) {
-        setShowRegisterDropdown(false)
-      }
-      if (actionsDropdownRef.current && !actionsDropdownRef.current.contains(event.target as Node)) {
-        setShowActionsDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   const handleDeleteJob = async () => {
     try {
@@ -83,7 +65,6 @@ function JobDetail() {
   const rawProgress = validPolledProgress?.progress ?? job?.progress ?? 0
 
   // Use simulated progress for smooth time-based animation
-  // Take the higher of simulated progress or actual backend progress
   const currentProgress = isJobTerminal
     ? (jobStatus === 'completed' ? 100 : rawProgress)
     : Math.max(simulatedProgress, rawProgress)
@@ -99,29 +80,6 @@ function JobDetail() {
     setShowCancelConfirm(false)
   }
 
-  interface TabConfig {
-    key: string
-    label: string
-    showWhenDone?: boolean
-    showForTimeseries?: boolean
-  }
-
-  const allTabs: TabConfig[] = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'leaderboard', label: 'Leaderboard', showWhenDone: true },
-    { key: 'diagnostics', label: 'Diagnostics', showWhenDone: true },
-    { key: 'learning', label: 'Metrics', showWhenDone: true },
-    { key: 'forecast', label: 'Forecast', showWhenDone: true, showForTimeseries: true },
-    { key: 'export', label: 'Outputs', showWhenDone: true },
-    { key: 'logs', label: 'Logs' },
-  ]
-
-  const tabs = allTabs.filter((tab) => {
-    if (tab.showWhenDone && currentStatus !== 'completed') return false
-    if (tab.showForTimeseries && job?.model_type !== 'timeseries') return false
-    return true
-  })
-
   return (
     <div>
       {/* Breadcrumb */}
@@ -133,97 +91,33 @@ function JobDetail() {
         <span className="text-domino-text-secondary">{job?.name || 'Training Job'}</span>
       </nav>
 
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap mb-5">
-        <div>
-          <h1 className="text-2xl font-normal text-domino-text-primary leading-tight">
-            {job ? `Run: ${job.name}` : 'Training in Progress'}
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          {['pending', 'running'].includes(currentStatus) && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelMutation.isPending}
-              className="h-[32px] px-[15px] text-sm font-normal border border-transparent rounded-[2px] text-white bg-domino-accent-red hover:bg-domino-accent-red/90 transition-all duration-200 inline-flex items-center"
-            >
-              <StopIcon className="h-4 w-4 inline mr-1" />
-              Cancel
-            </button>
-          )}
-          {currentStatus === 'completed' && job?.model_path && (
-            <div className="relative" ref={registerDropdownRef}>
-              <button
-                onClick={() => setShowRegisterDropdown(!showRegisterDropdown)}
-                className="h-[32px] px-[15px] bg-domino-accent-purple text-white text-sm font-normal rounded-[2px] hover:bg-domino-accent-purple-hover transition-all duration-200 inline-flex items-center gap-1.5"
-              >
-                Register
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showRegisterDropdown && (
-                <div className="absolute right-0 mt-1 w-48 bg-white shadow-lg border border-gray-200 py-1 z-50">
-                  <button
-                    onClick={() => {
-                      setShowRegisterDropdown(false)
-                      setShowRegisterDialog(true)
-                    }}
-                    className="w-full px-4 py-2 text-left text-sm text-domino-text-primary hover:bg-domino-bg-tertiary flex items-center gap-2 transition-colors"
-                  >
-                    <CloudArrowUpIcon className="w-4 h-4" />
-                    Deploy to Registry
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="relative" ref={actionsDropdownRef}>
-            <button
-              onClick={() => setShowActionsDropdown(!showActionsDropdown)}
-              className="h-[32px] w-[32px] flex items-center justify-center border border-[#d9d9d9] rounded-[2px] text-domino-text-secondary hover:border-domino-accent-purple hover:text-domino-accent-purple transition-all duration-200"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-                <circle cx="8" cy="3" r="1.5" />
-                <circle cx="8" cy="8" r="1.5" />
-                <circle cx="8" cy="13" r="1.5" />
-              </svg>
-            </button>
-            {showActionsDropdown && (
-              <div className="absolute right-0 mt-1 w-40 bg-white shadow-lg border border-gray-200 py-1 z-50">
-                <button
-                  onClick={() => {
-                    setShowActionsDropdown(false)
-                    setShowDeleteConfirm(true)
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm text-domino-accent-red hover:bg-domino-bg-tertiary transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <JobHeader
+        job={job}
+        currentStatus={currentStatus}
+        cancelIsPending={cancelMutation.isPending}
+        showRegisterDropdown={showRegisterDropdown}
+        showActionsDropdown={showActionsDropdown}
+        onCancel={handleCancel}
+        onToggleRegisterDropdown={() => setShowRegisterDropdown(!showRegisterDropdown)}
+        onCloseRegisterDropdown={() => setShowRegisterDropdown(false)}
+        onOpenRegisterDialog={() => {
+          setShowRegisterDropdown(false)
+          setShowRegisterDialog(true)
+        }}
+        onToggleActionsDropdown={() => setShowActionsDropdown(!showActionsDropdown)}
+        onCloseActionsDropdown={() => setShowActionsDropdown(false)}
+        onOpenDeleteConfirm={() => {
+          setShowActionsDropdown(false)
+          setShowDeleteConfirm(true)
+        }}
+      />
 
-      {/* Tabs */}
-      <div className="border-b border-domino-border mb-6">
-        <nav className="flex gap-6">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as DetailTab)}
-              className={`pb-3 text-sm border-b-2 -mb-px transition-colors ${
-                activeTab === tab.key
-                  ? 'border-domino-accent-purple text-domino-accent-purple font-medium'
-                  : 'border-transparent text-domino-text-secondary hover:text-domino-text-primary font-normal'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <JobTabNavigation
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        currentStatus={currentStatus}
+        modelType={job?.model_type}
+      />
 
       {/* Progress bar for running jobs */}
       {['pending', 'running'].includes(jobStatus) && activeTab === 'overview' && (
@@ -237,102 +131,7 @@ function JobDetail() {
 
       {/* Tab content */}
       {activeTab === 'overview' && (
-        <div>
-          {/* Description */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-domino-text-primary mb-1">Description</h3>
-            <p className="text-sm text-domino-text-secondary">
-              {job?.description || (isLoading ? 'Loading...' : 'No description available')}
-            </p>
-          </div>
-
-          {/* Metadata table */}
-          <div className="mb-6">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-domino-border">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-domino-text-primary w-48">Metadata</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-domino-text-primary border-l border-domino-border">Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-domino-border">
-                <MetadataRow label="Run ID" value={job?.id || (isLoading ? 'Loading...' : '—')} mono />
-                <MetadataRow label="Model type" value={job?.model_type || (isLoading ? 'Loading...' : '—')} capitalize />
-                {job?.problem_type && <MetadataRow label="Problem type" value={job.problem_type} capitalize />}
-                <MetadataRow label="Target column" value={job?.target_column || (isLoading ? 'Loading...' : '—')} />
-                <MetadataRow label="Preset" value={job?.preset?.replace(/_/g, ' ') || (isLoading ? 'Loading...' : '—')} capitalize />
-                {job?.eval_metric && <MetadataRow label="Eval metric" value={job.eval_metric} />}
-                {job?.time_limit && <MetadataRow label="Time limit" value={`${job.time_limit}s`} />}
-                {job?.created_at && (
-                  <MetadataRow
-                    label="Created"
-                    value={format(new Date(job.created_at), 'MMM d, yyyy h:mm a')}
-                  />
-                )}
-                {job?.started_at && (
-                  <MetadataRow
-                    label="Duration"
-                    value={formatDuration(job.started_at, job.completed_at)}
-                  />
-                )}
-                <MetadataRow label="Status">
-                  <Badge status={currentStatus as JobStatus} isRegistered={job?.is_registered} />
-                </MetadataRow>
-                {job?.experiment_name && (
-                  <MetadataRow label="Experiment" value={job.experiment_name} />
-                )}
-                {job?.experiment_run_id && (
-                  <MetadataRow label="MLflow run ID" value={job.experiment_run_id} mono />
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Metrics */}
-          {job?.metrics && Object.keys(job.metrics).length > 0 && (
-            <div className="mb-6">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-domino-border">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-domino-text-primary w-48">Metric</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-domino-text-primary border-l border-domino-border">Value</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-domino-border">
-                  {Object.entries(job.metrics).map(([key, value]) => {
-                    let displayValue: string
-                    if (typeof value === 'number' && !isNaN(value)) {
-                      displayValue = value.toFixed(4)
-                    } else if (typeof value === 'object' && value !== null) {
-                      displayValue = JSON.stringify(value)
-                    } else {
-                      displayValue = String(value ?? '—')
-                    }
-                    return (
-                      <MetadataRow
-                        key={key}
-                        label={key.replace(/_/g, ' ')}
-                        value={displayValue}
-                        mono
-                        capitalize
-                      />
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Error */}
-          {job?.error_message && (
-            <div className="border border-domino-accent-red/30 bg-domino-accent-red/5 rounded p-4 mt-6">
-              <p className="text-sm font-medium text-domino-accent-red mb-1">Error</p>
-              <pre className="text-sm text-domino-accent-red  whitespace-pre-wrap">
-                {job.error_message}
-              </pre>
-            </div>
-          )}
-        </div>
+        <JobOverviewTab job={job} isLoading={isLoading} currentStatus={currentStatus} />
       )}
 
       {activeTab === 'leaderboard' && currentStatus === 'completed' && job && (
@@ -428,31 +227,6 @@ function JobDetail() {
         />
       )}
     </div>
-  )
-}
-
-function MetadataRow({
-  label,
-  value,
-  mono,
-  capitalize: cap,
-  children,
-}: {
-  label: string
-  value?: string
-  mono?: boolean
-  capitalize?: boolean
-  children?: React.ReactNode
-}) {
-  return (
-    <tr className="hover:bg-domino-bg-secondary transition-colors">
-      <td className={`px-4 py-3 text-sm text-domino-text-secondary ${cap ? 'capitalize' : ''}`}>
-        {label}
-      </td>
-      <td className={`px-4 py-3 text-sm text-domino-text-primary border-l border-domino-border ${mono ? '' : ''} ${cap ? 'capitalize' : ''}`}>
-        {children || value || '—'}
-      </td>
-    </tr>
   )
 }
 

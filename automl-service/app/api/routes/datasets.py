@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+from functools import lru_cache
 from typing import Optional
 
 import pandas as pd
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.api.error_handler import handle_errors
 
 logger = logging.getLogger(__name__)
 
@@ -30,71 +32,61 @@ from app.api.schemas.dataset import (
 router = APIRouter()
 
 
+@lru_cache()
 def get_dataset_manager() -> DominoDatasetManager:
-    """Get dataset manager instance."""
+    """Get dataset manager instance (cached)."""
     return DominoDatasetManager()
 
 
 @router.get("", response_model=DatasetListResponse)
+@handle_errors("Failed to list datasets", detail_prefix="Failed to list datasets")
 async def list_datasets(
     dataset_manager: DominoDatasetManager = Depends(get_dataset_manager),
 ):
     """List available Domino datasets from /domino/datasets/local/ only."""
-    try:
-        datasets = await dataset_manager.list_datasets()
+    datasets = await dataset_manager.list_datasets()
 
-        # Only return datasets that exist in /domino/datasets/local/
-        # This filters out any datasets from Domino API that aren't mounted locally
-        local_path = "/domino/datasets/local"
-        filtered_datasets = []
+    # Only return datasets that exist in /domino/datasets/local/
+    # This filters out any datasets from Domino API that aren't mounted locally
+    local_path = "/domino/datasets/local"
+    filtered_datasets = []
 
-        for ds in datasets:
-            # Skip datasets with path-like names
-            if not ds.name or ds.name.startswith("/") or ds.id.startswith("/"):
-                continue
+    for ds in datasets:
+        # Skip datasets with path-like names
+        if not ds.name or ds.name.startswith("/") or ds.id.startswith("/"):
+            continue
 
-            # Check if this dataset exists in /domino/datasets/local/
-            dataset_path = os.path.join(local_path, ds.name)
-            if os.path.exists(dataset_path):
-                filtered_datasets.append(ds)
-            elif ds.id.startswith("domino:"):
-                # Already validated by _list_local_datasets
-                filtered_datasets.append(ds)
+        # Check if this dataset exists in /domino/datasets/local/
+        dataset_path = os.path.join(local_path, ds.name)
+        if os.path.exists(dataset_path):
+            filtered_datasets.append(ds)
+        elif ds.id.startswith("domino:"):
+            # Already validated by _list_local_datasets
+            filtered_datasets.append(ds)
 
-        logger.info(f"Returning {len(filtered_datasets)} datasets (filtered from {len(datasets)})")
+    logger.info(f"Returning {len(filtered_datasets)} datasets (filtered from {len(datasets)})")
 
-        return DatasetListResponse(
-            datasets=filtered_datasets,
-            total=len(filtered_datasets),
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to list datasets: {str(e)}",
-        )
+    return DatasetListResponse(
+        datasets=filtered_datasets,
+        total=len(filtered_datasets),
+    )
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
+@handle_errors("Failed to get dataset", detail_prefix="Failed to get dataset")
 async def get_dataset(
     dataset_id: str,
     dataset_manager: DominoDatasetManager = Depends(get_dataset_manager),
 ):
     """Get dataset details."""
-    try:
-        dataset = await dataset_manager.get_dataset(dataset_id)
-        if not dataset:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        return dataset
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get dataset: {str(e)}",
-        )
+    dataset = await dataset_manager.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset
 
 
 @router.get("/{dataset_id}/preview", response_model=DatasetPreviewResponse)
+@handle_errors("Failed to preview dataset", detail_prefix="Failed to preview dataset")
 async def preview_dataset(
     dataset_id: str,
     file_name: Optional[str] = Query(None, description="Specific file to preview"),
@@ -102,37 +94,22 @@ async def preview_dataset(
     dataset_manager: DominoDatasetManager = Depends(get_dataset_manager),
 ):
     """Preview dataset content."""
-    try:
-        preview = await dataset_manager.preview_dataset(
-            dataset_id, file_name=file_name, rows=rows
-        )
-        return preview
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to preview dataset: {str(e)}",
-        )
+    preview = await dataset_manager.preview_dataset(
+        dataset_id, file_name=file_name, rows=rows
+    )
+    return preview
 
 
 @router.get("/{dataset_id}/schema", response_model=DatasetSchemaResponse)
+@handle_errors("Failed to get dataset schema", detail_prefix="Failed to get dataset schema")
 async def get_dataset_schema(
     dataset_id: str,
     file_name: Optional[str] = Query(None, description="Specific file to get schema for"),
     dataset_manager: DominoDatasetManager = Depends(get_dataset_manager),
 ):
     """Get dataset schema (column names and types)."""
-    try:
-        schema = await dataset_manager.get_schema(dataset_id, file_name=file_name)
-        return schema
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get dataset schema: {str(e)}",
-        )
+    schema = await dataset_manager.get_schema(dataset_id, file_name=file_name)
+    return schema
 
 
 class PreviewRequest(BaseModel):
@@ -144,6 +121,7 @@ class PreviewRequest(BaseModel):
 
 
 @router.post("/preview", response_model=DatasetPreviewResponse)
+@handle_errors("[PREVIEW] Error reading file", detail_prefix="Failed to read file")
 async def preview_file_by_path(request: PreviewRequest):
     """Preview a file by its path with pagination support."""
     file_path = request.file_path
@@ -158,38 +136,32 @@ async def preview_file_by_path(request: PreviewRequest):
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
-    try:
-        file_ext = os.path.splitext(file_path)[1].lower()
+    file_ext = os.path.splitext(file_path)[1].lower()
 
-        if file_ext == ".csv":
-            # Count total rows first
-            with open(file_path, 'r') as f:
-                total_rows = sum(1 for _ in f) - 1
-            # Read with skip and limit for pagination
-            if offset > 0:
-                df = pd.read_csv(file_path, skiprows=range(1, offset + 1), nrows=limit)
-            else:
-                df = pd.read_csv(file_path, nrows=limit)
-        elif file_ext in [".parquet", ".pq"]:
-            df_full = pd.read_parquet(file_path)
-            total_rows = len(df_full)
-            df = df_full.iloc[offset:offset + limit]
+    if file_ext == ".csv":
+        # Count total rows first
+        with open(file_path, 'r') as f:
+            total_rows = sum(1 for _ in f) - 1
+        # Read with skip and limit for pagination
+        if offset > 0:
+            df = pd.read_csv(file_path, skiprows=range(1, offset + 1), nrows=limit)
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file format")
+            df = pd.read_csv(file_path, nrows=limit)
+    elif file_ext in [".parquet", ".pq"]:
+        df_full = pd.read_parquet(file_path)
+        total_rows = len(df_full)
+        df = df_full.iloc[offset:offset + limit]
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file format")
 
-        return DatasetPreviewResponse(
-            dataset_id=file_path,
-            file_name=os.path.basename(file_path),
-            columns=list(df.columns),
-            rows=df.to_dict(orient="records"),
-            total_rows=total_rows,
-            preview_rows=len(df),
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[PREVIEW] Error reading file: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+    return DatasetPreviewResponse(
+        dataset_id=file_path,
+        file_name=os.path.basename(file_path),
+        columns=list(df.columns),
+        rows=df.to_dict(orient="records"),
+        total_rows=total_rows,
+        preview_rows=len(df),
+    )
 
 
 @router.post("/upload", response_model=FileUploadResponse)

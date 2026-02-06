@@ -3,6 +3,7 @@
 import logging
 import os
 from datetime import datetime
+from functools import lru_cache
 from typing import Any, Optional
 
 from app.config import get_settings
@@ -741,3 +742,9 @@ class ExperimentTracker:
 
         mlflow.end_run(status=status)
         logger.debug("Ended MLflow run")
+
+
+@lru_cache()
+def get_experiment_tracker() -> ExperimentTracker:
+    """Get the experiment tracker singleton (cached)."""
+    return ExperimentTracker()

@@ -1,7 +1,7 @@
 import Input from '../../common/Input'
 import type { AdvancedAutoGluonConfig } from '../../../types/job'
 
-interface BaggingStackingConfigProps {
+interface ModelSelectionConfigProps {
   config: AdvancedAutoGluonConfig
   onChange: (key: keyof AdvancedAutoGluonConfig, value: unknown) => void
 }
@@ -18,7 +18,7 @@ const MODEL_TYPES_OPTIONS = [
   { value: 'FASTAI', label: 'Neural Network (FastAI)' },
 ]
 
-export function BaggingStackingConfig({ config, onChange }: BaggingStackingConfigProps) {
+export function ModelSelectionConfig({ config, onChange }: ModelSelectionConfigProps) {
   return (
     <div className="space-y-6">
       <div>

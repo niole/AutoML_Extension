@@ -11,7 +11,8 @@ from app.config import get_settings
 from app.db.database import async_session_maker
 from app.db import crud
 from app.db.models import JobStatus
-from app.core.autogluon_runner import AutoGluonRunner, AdvancedConfig, HpoConfig, ThresholdConfig
+from app.core.autogluon_runner import AutoGluonRunner
+from app.api.schemas.job import AdvancedAutoGluonConfig as AdvancedConfig
 from app.core.experiment_tracker import ExperimentTracker
 from app.core.dataset_manager import DominoDatasetManager
 from app.core.domino_registry import get_domino_registry
@@ -22,57 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 def parse_advanced_config(config_dict: Dict[str, Any]) -> AdvancedConfig:
-    """Parse advanced config dict into AdvancedConfig object with nested configs."""
+    """Parse advanced config dict into AdvancedConfig (Pydantic) object.
+
+    Pydantic's model_validate handles nested object deserialization (e.g.
+    hpo_config, threshold_config, per_model_hyperparameters) automatically,
+    and silently ignores unknown keys via model_config, so no manual
+    filtering or construction is needed.
+    """
     if not config_dict:
         return AdvancedConfig()
 
-    # Make a copy to avoid modifying the original
-    config = dict(config_dict)
-
-    # Parse nested HPO config
-    if "hpo_config" in config and config["hpo_config"]:
-        hpo_dict = config["hpo_config"]
-        config["hpo_config"] = HpoConfig(
-            enabled=hpo_dict.get("enabled", False),
-            scheduler=hpo_dict.get("scheduler", "local"),
-            searcher=hpo_dict.get("searcher", "auto"),
-            num_trials=hpo_dict.get("num_trials", 10),
-            max_t=hpo_dict.get("max_t"),
-            grace_period=hpo_dict.get("grace_period"),
-            reduction_factor=hpo_dict.get("reduction_factor"),
-        )
-
-    # Parse nested threshold config
-    if "threshold_config" in config and config["threshold_config"]:
-        threshold_dict = config["threshold_config"]
-        config["threshold_config"] = ThresholdConfig(
-            enabled=threshold_dict.get("enabled", False),
-            metric=threshold_dict.get("metric", "balanced_accuracy"),
-            thresholds_to_try=threshold_dict.get("thresholds_to_try", 100),
-        )
-
-    # Filter out keys that aren't in AdvancedConfig
-    valid_keys = {
-        "num_gpus", "num_cpus", "verbosity",
-        "num_bag_folds", "num_bag_sets", "num_stack_levels",
-        "holdout_frac", "auto_stack", "dynamic_stacking",
-        "excluded_model_types", "included_model_types",
-        "hyperparameters", "hyperparameter_tune_kwargs",
-        "hpo_config", "per_model_hyperparameters",
-        "ag_args_fit", "feature_generator", "feature_generator_kwargs",
-        "feature_prune", "feature_prune_kwargs",
-        "feature_metadata", "drop_unique", "calibrate",
-        "threshold_config", "refit_full", "set_best_to_refit_full",
-        "pseudo_labeling", "unlabeled_data_path",
-        "use_tabular_foundation_models", "foundation_model_preset",
-        "class_imbalance_strategy", "sample_weight_column",
-        "distill", "distill_time_limit", "use_bag_holdout",
-        "infer_limit", "cache_data",
-    }
-
-    filtered_config = {k: v for k, v in config.items() if k in valid_keys}
-
-    return AdvancedConfig(**filtered_config)
+    return AdvancedConfig.model_validate(config_dict)
 
 
 class TrainingProgressReporter:

@@ -4,6 +4,7 @@ import os
 import json
 import logging
 import shutil
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -510,13 +511,7 @@ This model was trained using AutoML for {job_info.get('problem_type', 'predictio
         return card
 
 
-# Singleton instance
-_domino_registry: Optional[DominoModelRegistry] = None
-
-
+@lru_cache()
 def get_domino_registry() -> DominoModelRegistry:
-    """Get the Domino registry singleton."""
-    global _domino_registry
-    if _domino_registry is None:
-        _domino_registry = DominoModelRegistry()
-    return _domino_registry
+    """Get the Domino registry singleton (cached)."""
+    return DominoModelRegistry()

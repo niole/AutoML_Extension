@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
+import { useAsyncOperation } from './useAsyncOperation'
 import type {
   FeatureImportanceResult,
   ConfusionMatrixResult,
@@ -46,8 +47,125 @@ export function useDiagnostics(): UseDiagnosticsResult {
   const [leaderboard, setLeaderboard] = useState<LeaderboardResult | null>(null)
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null)
   const [predictions, setPredictions] = useState<PredictionResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+
+  const featureImportanceOp = useAsyncOperation(
+    async (jobId: string, modelType?: string) => {
+      const { data } = await api.post<FeatureImportanceResult>('featureimportance', {
+        job_id: jobId,
+        model_type: modelType
+      })
+      setFeatureImportance(data)
+      return data
+    },
+    { errorMessage: 'Failed to get feature importance' }
+  )
+
+  const confusionMatrixOp = useAsyncOperation(
+    async (jobId: string, modelType?: string) => {
+      const { data } = await api.post<ConfusionMatrixResult>('confusionmatrix', {
+        job_id: jobId,
+        model_type: modelType
+      })
+      setConfusionMatrix(data)
+      return data
+    },
+    { errorMessage: 'Failed to get confusion matrix' }
+  )
+
+  const rocCurveOp = useAsyncOperation(
+    async (jobId: string, modelType?: string) => {
+      const { data } = await api.post<ROCCurveResult>('roccurve', {
+        job_id: jobId,
+        model_type: modelType
+      })
+      setROCCurve(data)
+      return data
+    },
+    { errorMessage: 'Failed to get ROC curve' }
+  )
+
+  const precisionRecallOp = useAsyncOperation(
+    async (jobId: string, modelType?: string) => {
+      const { data } = await api.post<PrecisionRecallResult>('precisionrecall', {
+        job_id: jobId,
+        model_type: modelType
+      })
+      setPrecisionRecall(data)
+      return data
+    },
+    { errorMessage: 'Failed to get precision-recall curve' }
+  )
+
+  const regressionDiagnosticsOp = useAsyncOperation(
+    async (jobId: string, modelType?: string) => {
+      const { data } = await api.post<RegressionDiagnosticsResult>('regressiondiagnostics', {
+        job_id: jobId,
+        model_type: modelType
+      })
+      setRegressionDiagnostics(data)
+      return data
+    },
+    { errorMessage: 'Failed to get regression diagnostics' }
+  )
+
+  const leaderboardOp = useAsyncOperation(
+    async (jobId: string, modelType?: string) => {
+      const { data } = await api.post<LeaderboardResult>('leaderboard', {
+        job_id: jobId,
+        model_type: modelType
+      })
+      setLeaderboard(data)
+      return data
+    },
+    { errorMessage: 'Failed to get leaderboard' }
+  )
+
+  const modelInfoOp = useAsyncOperation(
+    async (modelId: string, modelType: string) => {
+      const { data } = await api.post<ModelInfo>('modelinfo', {
+        model_id: modelId,
+        model_type: modelType
+      })
+      setModelInfo(data)
+      return data
+    },
+    { errorMessage: 'Failed to get model info' }
+  )
+
+  const predictOp = useAsyncOperation(
+    async (modelId: string, modelType: string, inputData: Record<string, unknown>[], returnProbs = false) => {
+      const { data: result } = await api.post<PredictionResult>('predict', {
+        model_id: modelId,
+        model_type: modelType,
+        data: inputData,
+        return_probabilities: returnProbs
+      })
+      setPredictions(result)
+      return result
+    },
+    { errorMessage: 'Failed to make predictions' }
+  )
+
+  const batchPredictOp = useAsyncOperation(
+    async (modelId: string, modelType: string, inputFile: string, outputFile: string) => {
+      const { data } = await api.post<BatchPredictionResult>('predictbatch', {
+        model_id: modelId,
+        model_type: modelType,
+        input_file: inputFile,
+        output_file: outputFile
+      })
+      return data
+    },
+    { errorMessage: 'Failed to run batch predictions' }
+  )
+
+  // Derive combined loading/error from all operations
+  const loading = featureImportanceOp.loading || confusionMatrixOp.loading ||
+    rocCurveOp.loading || precisionRecallOp.loading || regressionDiagnosticsOp.loading ||
+    leaderboardOp.loading || modelInfoOp.loading || predictOp.loading || batchPredictOp.loading
+  const error = featureImportanceOp.error ?? confusionMatrixOp.error ??
+    rocCurveOp.error ?? precisionRecallOp.error ?? regressionDiagnosticsOp.error ??
+    leaderboardOp.error ?? modelInfoOp.error ?? predictOp.error ?? batchPredictOp.error ?? null
 
   // Reset all cached data - call when switching jobs
   const reset = useCallback(() => {
@@ -59,141 +177,56 @@ export function useDiagnostics(): UseDiagnosticsResult {
     setLeaderboard(null)
     setModelInfo(null)
     setPredictions(null)
-    setError(null)
-  }, [])
+    // Reset errors on all operations
+    featureImportanceOp.reset()
+    confusionMatrixOp.reset()
+    rocCurveOp.reset()
+    precisionRecallOp.reset()
+    regressionDiagnosticsOp.reset()
+    leaderboardOp.reset()
+    modelInfoOp.reset()
+    predictOp.reset()
+    batchPredictOp.reset()
+  }, [
+    featureImportanceOp, confusionMatrixOp, rocCurveOp, precisionRecallOp,
+    regressionDiagnosticsOp, leaderboardOp, modelInfoOp, predictOp, batchPredictOp
+  ])
 
+  // Wrap execute calls to preserve the original return-type contracts
   const getFeatureImportance = useCallback(async (jobId: string, modelType?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<FeatureImportanceResult>('featureimportance', {
-        job_id: jobId,
-        model_type: modelType
-      })
-      setFeatureImportance(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get feature importance'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await featureImportanceOp.execute(jobId, modelType)
+    return result ?? null
+  }, [featureImportanceOp.execute])
 
   const getConfusionMatrix = useCallback(async (jobId: string, modelType?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<ConfusionMatrixResult>('confusionmatrix', {
-        job_id: jobId,
-        model_type: modelType
-      })
-      setConfusionMatrix(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get confusion matrix'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await confusionMatrixOp.execute(jobId, modelType)
+    return result ?? null
+  }, [confusionMatrixOp.execute])
 
   const getROCCurve = useCallback(async (jobId: string, modelType?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<ROCCurveResult>('roccurve', {
-        job_id: jobId,
-        model_type: modelType
-      })
-      setROCCurve(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get ROC curve'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await rocCurveOp.execute(jobId, modelType)
+    return result ?? null
+  }, [rocCurveOp.execute])
 
   const getPrecisionRecall = useCallback(async (jobId: string, modelType?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<PrecisionRecallResult>('precisionrecall', {
-        job_id: jobId,
-        model_type: modelType
-      })
-      setPrecisionRecall(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get precision-recall curve'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await precisionRecallOp.execute(jobId, modelType)
+    return result ?? null
+  }, [precisionRecallOp.execute])
 
   const getRegressionDiagnostics = useCallback(async (jobId: string, modelType?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<RegressionDiagnosticsResult>('regressiondiagnostics', {
-        job_id: jobId,
-        model_type: modelType
-      })
-      setRegressionDiagnostics(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get regression diagnostics'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await regressionDiagnosticsOp.execute(jobId, modelType)
+    return result ?? null
+  }, [regressionDiagnosticsOp.execute])
 
   const getLeaderboard = useCallback(async (jobId: string, modelType?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<LeaderboardResult>('leaderboard', {
-        job_id: jobId,
-        model_type: modelType
-      })
-      setLeaderboard(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get leaderboard'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await leaderboardOp.execute(jobId, modelType)
+    return result ?? null
+  }, [leaderboardOp.execute])
 
   const getModelInfo = useCallback(async (modelId: string, modelType: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<ModelInfo>('modelinfo', {
-        model_id: modelId,
-        model_type: modelType
-      })
-      setModelInfo(data)
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get model info'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await modelInfoOp.execute(modelId, modelType)
+    return result ?? null
+  }, [modelInfoOp.execute])
 
   const predict = useCallback(async (
     modelId: string,
@@ -201,25 +234,9 @@ export function useDiagnostics(): UseDiagnosticsResult {
     data: Record<string, unknown>[],
     returnProbs = false
   ) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data: result } = await api.post<PredictionResult>('predict', {
-        model_id: modelId,
-        model_type: modelType,
-        data,
-        return_probabilities: returnProbs
-      })
-      setPredictions(result)
-      return result
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to make predictions'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await predictOp.execute(modelId, modelType, data, returnProbs)
+    return result ?? null
+  }, [predictOp.execute])
 
   const batchPredict = useCallback(async (
     modelId: string,
@@ -227,24 +244,9 @@ export function useDiagnostics(): UseDiagnosticsResult {
     inputFile: string,
     outputFile: string
   ) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<BatchPredictionResult>('predictbatch', {
-        model_id: modelId,
-        model_type: modelType,
-        input_file: inputFile,
-        output_file: outputFile
-      })
-      return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to run batch predictions'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await batchPredictOp.execute(modelId, modelType, inputFile, outputFile)
+    return result ?? null
+  }, [batchPredictOp.execute])
 
   return {
     featureImportance,

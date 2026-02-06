@@ -12,6 +12,7 @@ from app.core.domino_registry import get_domino_registry
 from app.db import crud
 from app.db.models import RegisteredModel as DBRegisteredModel
 from app.dependencies import get_db
+from app.api.error_handler import handle_errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -109,159 +110,144 @@ class ModelCardRequest(BaseModel):
 
 
 @router.post("/register", response_model=RegisterModelResponse)
+@handle_errors("Error registering model")
 async def register_model(request: RegisterModelRequest, db: AsyncSession = Depends(get_db)):
     """Register a trained model to the Domino Model Registry and local database."""
     registry = get_domino_registry()
 
-    try:
-        # Build tags and metrics from job info if job_id provided
-        tags = request.tags or {}
-        metrics = request.metrics or {}
-        params = request.params or {}
+    # Build tags and metrics from job info if job_id provided
+    tags = request.tags or {}
+    metrics = request.metrics or {}
+    params = request.params or {}
 
-        if request.job_id:
-            job = await crud.get_job(db, request.job_id)
-            if job:
-                # Add default tags
-                tags["source"] = "automl"
-                tags["model_type"] = request.model_type
-                if job.problem_type:
-                    tags["problem_type"] = job.problem_type.value if hasattr(job.problem_type, 'value') else str(job.problem_type)
-                if job.target_column:
-                    tags["target_column"] = job.target_column
-                if job.preset:
-                    tags["preset"] = job.preset.value if hasattr(job.preset, 'value') else str(job.preset)
+    if request.job_id:
+        job = await crud.get_job(db, request.job_id)
+        if job:
+            # Add default tags
+            tags["source"] = "automl"
+            tags["model_type"] = request.model_type
+            if job.problem_type:
+                tags["problem_type"] = job.problem_type.value if hasattr(job.problem_type, 'value') else str(job.problem_type)
+            if job.target_column:
+                tags["target_column"] = job.target_column
+            if job.preset:
+                tags["preset"] = job.preset.value if hasattr(job.preset, 'value') else str(job.preset)
 
-                # Add params from job config
-                params["model_type"] = request.model_type
-                if job.time_limit:
-                    params["time_limit"] = job.time_limit
-                if job.eval_metric:
-                    params["eval_metric"] = job.eval_metric
+            # Add params from job config
+            params["model_type"] = request.model_type
+            if job.time_limit:
+                params["time_limit"] = job.time_limit
+            if job.eval_metric:
+                params["eval_metric"] = job.eval_metric
 
-                # Extract numeric metrics from job.metrics
-                if job.metrics:
-                    for key, value in job.metrics.items():
-                        if isinstance(value, (int, float)) and not isinstance(value, bool):
-                            metrics[key] = float(value)
+            # Extract numeric metrics from job.metrics
+            if job.metrics:
+                for key, value in job.metrics.items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        metrics[key] = float(value)
 
-                logger.info(f"Built tags={tags}, metrics={metrics} from job {request.job_id}")
+            logger.info(f"Built tags={tags}, metrics={metrics} from job {request.job_id}")
 
-        # Get experiment name - from request, or from job if job_id provided
-        experiment_name = request.experiment_name
-        if not experiment_name and request.job_id:
-            job = await crud.get_job(db, request.job_id)
-            if job and hasattr(job, 'experiment_name') and job.experiment_name:
-                experiment_name = job.experiment_name
+    # Get experiment name - from request, or from job if job_id provided
+    experiment_name = request.experiment_name
+    if not experiment_name and request.job_id:
+        job = await crud.get_job(db, request.job_id)
+        if job and hasattr(job, 'experiment_name') and job.experiment_name:
+            experiment_name = job.experiment_name
 
-        result = registry.register_model(
-            model_path=request.model_path,
-            model_name=request.model_name,
-            model_type=request.model_type,
-            description=request.description,
-            tags=tags if tags else None,
-            metrics=metrics if metrics else None,
-            params=params if params else None,
-            experiment_name=experiment_name,  # Use same experiment as training
-        )
+    result = registry.register_model(
+        model_path=request.model_path,
+        model_name=request.model_name,
+        model_type=request.model_type,
+        description=request.description,
+        tags=tags if tags else None,
+        metrics=metrics if metrics else None,
+        params=params if params else None,
+        experiment_name=experiment_name,  # Use same experiment as training
+    )
 
-        # Also save to local database for persistence
-        if result.get("success"):
-            try:
-                # Check if model already exists
-                existing = await crud.get_registered_model(db, request.model_name)
-                if existing:
-                    # Update version
-                    existing.version += 1
-                    existing.mlflow_model_uri = result.get("artifact_uri")
+    # Also save to local database for persistence
+    if result.get("success"):
+        try:
+            # Check if model already exists
+            existing = await crud.get_registered_model(db, request.model_name)
+            if existing:
+                # Update version
+                existing.version += 1
+                existing.mlflow_model_uri = result.get("artifact_uri")
+                await db.commit()
+            else:
+                # Create new entry
+                local_model = DBRegisteredModel(
+                    name=request.model_name,
+                    description=request.description,
+                    job_id=request.job_id,
+                    mlflow_model_uri=result.get("artifact_uri"),
+                )
+                await crud.create_registered_model(db, local_model)
+            logger.info(f"Saved model {request.model_name} to local database")
+
+            # Update job's registration status
+            if request.job_id:
+                job = await crud.get_job(db, request.job_id)
+                if job:
+                    job.is_registered = True
+                    job.registered_model_name = request.model_name
+                    job.registered_model_version = result.get("model_version")
                     await db.commit()
-                else:
-                    # Create new entry
-                    local_model = DBRegisteredModel(
-                        name=request.model_name,
-                        description=request.description,
-                        job_id=request.job_id,
-                        mlflow_model_uri=result.get("artifact_uri"),
-                    )
-                    await crud.create_registered_model(db, local_model)
-                logger.info(f"Saved model {request.model_name} to local database")
+                    logger.info(f"Updated job {request.job_id} with registration status")
+        except Exception as db_error:
+            logger.warning(f"Could not save to local DB: {db_error}")
 
-                # Update job's registration status
-                if request.job_id:
-                    job = await crud.get_job(db, request.job_id)
-                    if job:
-                        job.is_registered = True
-                        job.registered_model_name = request.model_name
-                        job.registered_model_version = result.get("model_version")
-                        await db.commit()
-                        logger.info(f"Updated job {request.job_id} with registration status")
-            except Exception as db_error:
-                logger.warning(f"Could not save to local DB: {db_error}")
-
-        return RegisterModelResponse(**result)
-
-    except Exception as e:
-        logger.error(f"Error registering model: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return RegisterModelResponse(**result)
 
 
 @router.get("/models", response_model=List[LocalModelInfo])
+@handle_errors("Error listing models")
 async def list_registered_models(db: AsyncSession = Depends(get_db)):
     """List all registered models from local database."""
-    try:
-        models = await crud.get_registered_models(db)
-        result = []
-        for m in models:
-            # Get job info to add model_path and model_type
-            job = await crud.get_job(db, m.job_id) if m.job_id else None
-            result.append(LocalModelInfo(
-                id=m.id,
-                name=m.name,
-                description=m.description,
-                job_id=m.job_id,
-                version=m.version,
-                mlflow_model_uri=m.mlflow_model_uri,
-                domino_model_id=m.domino_model_id,
-                deployed=m.deployed,
-                created_at=m.created_at,
-                model_path=job.model_path if job else None,
-                model_type=job.model_type.value if job else None,
-                metrics=job.metrics if job else None,
-            ))
-        return result
-    except Exception as e:
-        logger.error(f"Error listing models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    models = await crud.get_registered_models(db)
+    result = []
+    for m in models:
+        # Get job info to add model_path and model_type
+        job = await crud.get_job(db, m.job_id) if m.job_id else None
+        result.append(LocalModelInfo(
+            id=m.id,
+            name=m.name,
+            description=m.description,
+            job_id=m.job_id,
+            version=m.version,
+            mlflow_model_uri=m.mlflow_model_uri,
+            domino_model_id=m.domino_model_id,
+            deployed=m.deployed,
+            created_at=m.created_at,
+            model_path=job.model_path if job else None,
+            model_type=job.model_type.value if job else None,
+            metrics=job.metrics if job else None,
+        ))
+    return result
 
 
 @router.get("/models/mlflow", response_model=List[RegisteredModelInfo])
+@handle_errors("Error listing MLflow models")
 async def list_mlflow_models():
     """List all registered models from MLflow registry."""
     registry = get_domino_registry()
 
-    try:
-        models = registry.list_registered_models()
-        return [RegisteredModelInfo(**m) for m in models]
-    except Exception as e:
-        logger.error(f"Error listing MLflow models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    models = registry.list_registered_models()
+    return [RegisteredModelInfo(**m) for m in models]
 
 
 @router.get("/models/{model_name}/versions", response_model=List[ModelVersionInfo])
+@handle_errors("Error getting model versions")
 async def get_model_versions(model_name: str):
     """Get all versions of a registered model."""
     registry = get_domino_registry()
 
-    try:
-        versions = registry.get_model_versions(model_name)
-        if not versions:
-            raise HTTPException(status_code=404, detail=f"Model not found: {model_name}")
-        return [ModelVersionInfo(**v) for v in versions]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting model versions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    versions = registry.get_model_versions(model_name)
+    if not versions:
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_name}")
+    return [ModelVersionInfo(**v) for v in versions]
 
 
 @router.post("/models/transition-stage")
@@ -339,75 +325,66 @@ async def get_model_uri(model_name: str, version: str):
 
 
 @router.post("/models/{model_name}/versions/{version}/download")
+@handle_errors("Error downloading model")
 async def download_model(model_name: str, version: str):
     """Download a model from the registry to local storage."""
     registry = get_domino_registry()
 
-    try:
-        local_path = registry.load_model_from_registry(model_name, version=version)
+    local_path = registry.load_model_from_registry(model_name, version=version)
 
-        if not local_path:
-            raise HTTPException(status_code=404, detail="Model not found or download failed")
+    if not local_path:
+        raise HTTPException(status_code=404, detail="Model not found or download failed")
 
-        return {
-            "success": True,
-            "model_name": model_name,
-            "version": version,
-            "local_path": local_path
-        }
-    except Exception as e:
-        logger.error(f"Error downloading model: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "success": True,
+        "model_name": model_name,
+        "version": version,
+        "local_path": local_path
+    }
 
 
 @router.post("/models/card")
+@handle_errors("Error generating model card")
 async def generate_model_card(request: ModelCardRequest):
     """Generate a model card markdown document."""
     registry = get_domino_registry()
 
-    try:
-        card = registry.create_model_card(
-            model_name=request.model_name,
-            version=request.version,
-            job_info=request.job_info,
-            metrics=request.metrics,
-            feature_importance=request.feature_importance
-        )
+    card = registry.create_model_card(
+        model_name=request.model_name,
+        version=request.version,
+        job_info=request.job_info,
+        metrics=request.metrics,
+        feature_importance=request.feature_importance
+    )
 
-        return {
-            "model_name": request.model_name,
-            "version": request.version,
-            "card": card
-        }
-    except Exception as e:
-        logger.error(f"Error generating model card: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "model_name": request.model_name,
+        "version": request.version,
+        "card": card
+    }
 
 
 @router.get("/models/{model_name}/stages")
+@handle_errors("Error getting model stages")
 async def get_model_by_stage(model_name: str):
     """Get model versions organized by stage."""
     registry = get_domino_registry()
 
-    try:
-        versions = registry.get_model_versions(model_name)
+    versions = registry.get_model_versions(model_name)
 
-        by_stage = {
-            "None": [],
-            "Staging": [],
-            "Production": [],
-            "Archived": []
-        }
+    by_stage = {
+        "None": [],
+        "Staging": [],
+        "Production": [],
+        "Archived": []
+    }
 
-        for v in versions:
-            stage = v.get("stage", "None")
-            if stage in by_stage:
-                by_stage[stage].append(v)
+    for v in versions:
+        stage = v.get("stage", "None")
+        if stage in by_stage:
+            by_stage[stage].append(v)
 
-        return {
-            "model_name": model_name,
-            "stages": by_stage
-        }
-    except Exception as e:
-        logger.error(f"Error getting model stages: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "model_name": model_name,
+        "stages": by_stage
+    }

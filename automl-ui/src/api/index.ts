@@ -18,85 +18,30 @@ function getAppBasePath(): string {
   return match ? match[1] : ''
 }
 
-// Map API endpoints to Domino-safe single-segment paths (no 'api' prefix - Domino blocks it)
-const ENDPOINT_MAP: Record<string, string> = {
-  // Health
-  'health': 'svchealth',
-  'health/user': 'svcuser',
-
-  // Jobs
-  'jobs': 'svcjobs',
-  'jobcreate': 'svcjobcreate',
-  'jobget': 'svcjobget',
-  'jobstatus': 'svcjobstatus',
-  'jobmetrics': 'svcjobmetrics',
-  'joblogs': 'svcjoblogs',
-  'jobcancel': 'svcjobcancel',
-  'jobdelete': 'svcjobdelete',
-  'jobprogress': 'svcjobprogress',
-  'jobregister': 'svcjobregister',
-
-  // Datasets
-  'datasets': 'svcdatasets',
-  'datasetpreview': 'svcdatasetpreview',
-  'upload': 'svcupload',
-  'models': 'svcmodels',
-
-  // Predictions
-  'predict': 'svcpredict',
-  'predictbatch': 'svcpredictbatch',
-  'modelinfo': 'svcmodelinfo',
-  'featureimportance': 'svcfeatureimportance',
-  'leaderboard': 'svcleaderboard',
-  'confusionmatrix': 'svcconfusionmatrix',
-  'roccurve': 'svcroccurve',
-  'precisionrecall': 'svcprecisionrecall',
-  'regressiondiagnostics': 'svcregressiondiagnostics',
-  'unloadmodel': 'svcunloadmodel',
-  'loadedmodels': 'svcloadedmodels',
-
-  // Profiling
-  'profile': 'svcprofile',
-  'profilequick': 'svcprofilequick',
-  'suggesttarget': 'svcsuggesttarget',
-  'profilecolumn': 'svcprofilecolumn',
-  'metrics': 'svcmetrics',
-  'presets': 'svcpresets',
-
-  // Registry
-  'registermodel': 'svcregistermodel',
-  'registeredmodels': 'svcregisteredmodels',
-  'modelversions': 'svcmodelversions',
-  'transitionstage': 'svctransitionstage',
-  'updatedescription': 'svcupdatedescription',
-  'deleteversion': 'svcdeleteversion',
-  'deletemodel': 'svcdeletemodel',
-  'modelcard': 'svcmodelcard',
-  'downloadmodel': 'svcdownloadmodel',
-
-  // Export
-  'exportonnx': 'svcexportonnx',
-  'exportdeployment': 'svcexportdeployment',
-  'learningcurves': 'svclearningcurves',
-  'exportformats': 'svcexportformats',
-  'exportnotebook': 'svcexportnotebook',
-
-  // Debug
-  'ping': 'svcping',
-
-  // Deployments
-  'deployments': 'svcdeployments',
-  'deploymentcreate': 'svcdeploymentcreate',
-  'deploymentget': 'svcdeploymentget',
-  'deploymentstart': 'svcdeploymentstart',
-  'deploymentstop': 'svcdeploymentstop',
-  'deploymentdelete': 'svcdeploymentdelete',
-  'deploymentstatus': 'svcdeploymentstatus',
-  'deploymentlogs': 'svcdeploymentlogs',
-  'quickdeploy': 'svcquickdeploy',
-  'deployfromjob': 'svcdeployfromjob',
-  'modelapis': 'svcmodelapis',
+/**
+ * Convert an endpoint name to a Domino-safe single-segment path.
+ *
+ * Convention: strip slashes, take the last segment, prepend "svc".
+ *   "health"       -> "svchealth"
+ *   "jobcreate"    -> "svcjobcreate"
+ *   "health/user"  -> "svcuser"
+ *
+ * For the rare cases where the endpoint name does NOT follow the convention
+ * (e.g. a typo in the caller vs. backend), use ENDPOINT_OVERRIDES.
+ */
+const ENDPOINT_OVERRIDES: Record<string, string> = {
+  // Key typed as "modenapicreate" in callers but backend route is "svcmodelapicreate"
   'modenapicreate': 'svcmodelapicreate',
+}
+
+function toDominoPath(endpoint: string): string {
+  if (ENDPOINT_OVERRIDES[endpoint]) {
+    return ENDPOINT_OVERRIDES[endpoint]
+  }
+  // Take the last path segment (handles "health/user" -> "user")
+  const segments = endpoint.split('/')
+  const lastSegment = segments[segments.length - 1]
+  return `svc${lastSegment}`
 }
 
 // Fetch-based API client
@@ -119,12 +64,8 @@ class ApiClient {
 
     let fullUrl: string
     if (DOMINO_MODE) {
-      // Map to single-segment Domino endpoint
-      const mappedPath = ENDPOINT_MAP[cleanEndpoint]
-      if (!mappedPath) {
-        console.error(`No mapping for endpoint: ${cleanEndpoint}`)
-        throw new Error(`Unknown endpoint: ${cleanEndpoint}`)
-      }
+      // Convert to single-segment Domino-safe path (convention: "svc" + endpoint)
+      const mappedPath = toDominoPath(cleanEndpoint)
       const basePath = getAppBasePath()
       fullUrl = `${basePath}/${mappedPath}`
     } else {

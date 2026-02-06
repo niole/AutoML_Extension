@@ -2,12 +2,12 @@ import Input from '../../common/Input'
 import Select from '../../common/Select'
 import type { AdvancedAutoGluonConfig } from '../../../types/job'
 
-interface GeneralConfigProps {
+interface ResourceConfigProps {
   config: AdvancedAutoGluonConfig
   onChange: (key: keyof AdvancedAutoGluonConfig, value: unknown) => void
 }
 
-export function GeneralConfig({ config, onChange }: GeneralConfigProps) {
+export function ResourceConfig({ config, onChange }: ResourceConfigProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div>

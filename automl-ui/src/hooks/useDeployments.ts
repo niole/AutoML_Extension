@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
-import { getErrorMessage } from '../utils/errors'
+import { useAsyncOperation } from './useAsyncOperation'
 import type {
   Deployment,
   DeploymentResponse,
@@ -31,182 +31,172 @@ interface UseDeploymentsResult {
 export function useDeployments(): UseDeploymentsResult {
   const [deployments, setDeployments] = useState<Deployment[]>([])
   const [modelApis, setModelApis] = useState<ModelApi[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const fetchDeployments = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
+  const fetchDeploymentsOp = useAsyncOperation(
+    async () => {
       const { data } = await api.get<{ success: boolean; data: Deployment[]; error?: string; warning?: string }>('deployments')
       const deploymentList = data.data || []
       setDeployments(deploymentList)
       return deploymentList
-    } catch (err) {
-      setError(getErrorMessage(err) || 'Failed to fetch deployments')
-      return []
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to fetch deployments' }
+  )
 
-  const fetchModelApis = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
+  const fetchModelApisOp = useAsyncOperation(
+    async () => {
       const { data } = await api.get<{ success: boolean; data: ModelApi[] }>('modelapis')
       const apiList = data.data || []
       setModelApis(apiList)
       return apiList
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to fetch model APIs'
-      setError(message)
-      return []
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to fetch model APIs' }
+  )
 
-  const getDeployment = useCallback(async (deploymentId: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const getDeploymentOp = useAsyncOperation(
+    async (deploymentId: string) => {
       const { data } = await api.post<{ success: boolean; data: Deployment }>('deploymentget', {
         deployment_id: deploymentId
       })
       return data.data || null
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to get deployment'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to get deployment' }
+  )
 
-  const getDeploymentStatus = useCallback(async (deploymentId: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const getDeploymentStatusOp = useAsyncOperation(
+    async (deploymentId: string) => {
       const { data } = await api.post<DeploymentStatusResponse>('deploymentstatus', {
         deployment_id: deploymentId
       })
       return data
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to get deployment status'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to get deployment status' }
+  )
 
-  const startDeployment = useCallback(async (deploymentId: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const startDeploymentOp = useAsyncOperation(
+    async (deploymentId: string, refreshFn: () => Promise<Deployment[]>) => {
       const { data } = await api.post<DeploymentResponse>('deploymentstart', {
         deployment_id: deploymentId
       })
       // Refresh deployments list
-      await fetchDeployments()
+      await refreshFn()
       return data
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to start deployment'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchDeployments])
+    },
+    { errorMessage: 'Failed to start deployment' }
+  )
 
-  const stopDeployment = useCallback(async (deploymentId: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const stopDeploymentOp = useAsyncOperation(
+    async (deploymentId: string, refreshFn: () => Promise<Deployment[]>) => {
       const { data } = await api.post<DeploymentResponse>('deploymentstop', {
         deployment_id: deploymentId
       })
       // Refresh deployments list
-      await fetchDeployments()
+      await refreshFn()
       return data
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to stop deployment'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchDeployments])
+    },
+    { errorMessage: 'Failed to stop deployment' }
+  )
 
-  const deleteDeployment = useCallback(async (deploymentId: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const deleteDeploymentOp = useAsyncOperation(
+    async (deploymentId: string, refreshFn: () => Promise<Deployment[]>) => {
       await api.post('deploymentdelete', { deployment_id: deploymentId })
       // Refresh deployments list
-      await fetchDeployments()
-      return true
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to delete deployment'
-      setError(message)
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchDeployments])
+      await refreshFn()
+      return true as const
+    },
+    { errorMessage: 'Failed to delete deployment' }
+  )
 
-  const getDeploymentLogs = useCallback(async (deploymentId: string, logType = 'stdout') => {
-    setLoading(true)
-    setError(null)
-    try {
+  const getDeploymentLogsOp = useAsyncOperation(
+    async (deploymentId: string, logType = 'stdout') => {
       const { data } = await api.post<DeploymentLogs>('deploymentlogs', {
         deployment_id: deploymentId,
         log_type: logType
       })
       return data.logs || null
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to get deployment logs'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to get deployment logs' }
+  )
 
-  const quickDeploy = useCallback(async (request: QuickDeployRequest) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const quickDeployOp = useAsyncOperation(
+    async (request: QuickDeployRequest, refreshFn: () => Promise<Deployment[]>) => {
       const { data } = await api.post<DeploymentResponse>('quickdeploy', request)
       // Refresh deployments list
-      await fetchDeployments()
+      await refreshFn()
       return data
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to deploy model'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchDeployments])
+    },
+    { errorMessage: 'Failed to deploy model' }
+  )
 
-  const deployFromJob = useCallback(async (request: DeployFromJobRequest) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const deployFromJobOp = useAsyncOperation(
+    async (request: DeployFromJobRequest, refreshFn: () => Promise<Deployment[]>) => {
       const { data } = await api.post<DeploymentResponse>('deployfromjob', request)
       // Refresh deployments list
-      await fetchDeployments()
+      await refreshFn()
       return data
-    } catch (err) {
-      const message = getErrorMessage(err) || 'Failed to deploy from job'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchDeployments])
+    },
+    { errorMessage: 'Failed to deploy from job' }
+  )
+
+  // Derive combined loading/error from all operations
+  const loading = fetchDeploymentsOp.loading || fetchModelApisOp.loading ||
+    getDeploymentOp.loading || getDeploymentStatusOp.loading || startDeploymentOp.loading ||
+    stopDeploymentOp.loading || deleteDeploymentOp.loading || getDeploymentLogsOp.loading ||
+    quickDeployOp.loading || deployFromJobOp.loading
+  const error = fetchDeploymentsOp.error ?? fetchModelApisOp.error ??
+    getDeploymentOp.error ?? getDeploymentStatusOp.error ?? startDeploymentOp.error ??
+    stopDeploymentOp.error ?? deleteDeploymentOp.error ?? getDeploymentLogsOp.error ??
+    quickDeployOp.error ?? deployFromJobOp.error ?? null
+
+  // Wrap execute calls to preserve the original return-type contracts
+  const fetchDeployments = useCallback(async () => {
+    const result = await fetchDeploymentsOp.execute()
+    return result ?? []
+  }, [fetchDeploymentsOp.execute])
+
+  const fetchModelApis = useCallback(async () => {
+    const result = await fetchModelApisOp.execute()
+    return result ?? []
+  }, [fetchModelApisOp.execute])
+
+  const getDeployment = useCallback(async (deploymentId: string) => {
+    const result = await getDeploymentOp.execute(deploymentId)
+    return result ?? null
+  }, [getDeploymentOp.execute])
+
+  const getDeploymentStatus = useCallback(async (deploymentId: string) => {
+    const result = await getDeploymentStatusOp.execute(deploymentId)
+    return result ?? null
+  }, [getDeploymentStatusOp.execute])
+
+  const startDeployment = useCallback(async (deploymentId: string) => {
+    const result = await startDeploymentOp.execute(deploymentId, fetchDeployments)
+    return result ?? null
+  }, [startDeploymentOp.execute, fetchDeployments])
+
+  const stopDeployment = useCallback(async (deploymentId: string) => {
+    const result = await stopDeploymentOp.execute(deploymentId, fetchDeployments)
+    return result ?? null
+  }, [stopDeploymentOp.execute, fetchDeployments])
+
+  const deleteDeployment = useCallback(async (deploymentId: string) => {
+    const result = await deleteDeploymentOp.execute(deploymentId, fetchDeployments)
+    return result ?? false
+  }, [deleteDeploymentOp.execute, fetchDeployments])
+
+  const getDeploymentLogs = useCallback(async (deploymentId: string, logType?: string) => {
+    const result = await getDeploymentLogsOp.execute(deploymentId, logType ?? 'stdout')
+    return result ?? null
+  }, [getDeploymentLogsOp.execute])
+
+  const quickDeploy = useCallback(async (request: QuickDeployRequest) => {
+    const result = await quickDeployOp.execute(request, fetchDeployments)
+    return result ?? null
+  }, [quickDeployOp.execute, fetchDeployments])
+
+  const deployFromJob = useCallback(async (request: DeployFromJobRequest) => {
+    const result = await deployFromJobOp.execute(request, fetchDeployments)
+    return result ?? null
+  }, [deployFromJobOp.execute, fetchDeployments])
 
   return {
     deployments,

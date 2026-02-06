@@ -6,22 +6,9 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from .base import BaseTrainer, AdvancedConfig
+from .callbacks import TrainingProgressCallback
 
 logger = logging.getLogger(__name__)
-
-
-class TrainingProgressCallback:
-    """Callback for tracking training progress."""
-
-    def __init__(self, job_id: str, log_callback=None):
-        self.job_id = job_id
-        self.log_callback = log_callback
-
-    def on_progress(self, percent: float, message: str):
-        """Called to update progress percentage."""
-        if self.log_callback:
-            import asyncio
-            asyncio.create_task(self.log_callback(f"[{percent:.0f}%] {message}"))
 
 
 class TimeSeriesTrainer(BaseTrainer):

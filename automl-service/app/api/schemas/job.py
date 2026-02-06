@@ -93,6 +93,8 @@ class DecisionThresholdConfig(BaseModel):
 class AdvancedAutoGluonConfig(BaseModel):
     """Advanced AutoGluon configuration options."""
 
+    model_config = {"extra": "ignore"}
+
     # Resource allocation
     num_gpus: int = Field(0, ge=0, description="Number of GPUs to use")
     num_cpus: Optional[int] = Field(None, ge=1, description="Number of CPUs (auto if None)")
@@ -135,6 +137,19 @@ class AdvancedAutoGluonConfig(BaseModel):
         None,
         description="Model-specific hyperparameter overrides"
     )
+
+    # Early stopping / ag_args_fit
+    ag_args_fit: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Extra arguments passed to model .fit() (e.g., early stopping)"
+    )
+
+    # Feature engineering
+    feature_generator: Optional[str] = Field(
+        None,
+        description="Feature generator type override"
+    )
+    feature_prune: bool = Field(False, description="Enable feature pruning")
 
     # Post-training
     calibrate: bool = Field(False, description="Calibrate model probabilities")

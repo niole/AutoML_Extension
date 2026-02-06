@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.data_profiler import get_data_profiler
+from app.api.error_handler import handle_errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -81,6 +82,7 @@ class TargetSuggestionsResponse(BaseModel):
 
 
 @router.post("/profile", response_model=ProfileResponse)
+@handle_errors("Profiling error")
 async def profile_data(request: ProfileRequest):
     """Generate a comprehensive profile of a data file."""
     profiler = get_data_profiler()
@@ -101,14 +103,10 @@ async def profile_data(request: ProfileRequest):
 
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"File not found: {request.file_path}")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Profiling error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/profile/suggest-target", response_model=TargetSuggestionsResponse)
+@handle_errors("Error suggesting targets")
 async def suggest_target_column(request: ProfileRequest):
     """Suggest potential target columns based on data profile."""
     profiler = get_data_profiler()
@@ -127,46 +125,40 @@ async def suggest_target_column(request: ProfileRequest):
 
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"File not found: {request.file_path}")
-    except Exception as e:
-        logger.error(f"Error suggesting targets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/profile/quick")
+@handle_errors("Quick profile error")
 async def quick_profile(file_path: str):
     """Get a quick profile summary (faster than full profile)."""
     profiler = get_data_profiler()
 
-    try:
-        profile = profiler.profile_file(file_path, sample_size=1000)
+    profile = profiler.profile_file(file_path, sample_size=1000)
 
-        # Return simplified summary
-        return {
-            "rows": profile["summary"]["total_rows"],
-            "columns": profile["summary"]["total_columns"],
-            "memory_mb": round(profile["summary"]["memory_usage_mb"], 2),
-            "column_types": {
-                col["name"]: col["semantic_type"]
-                for col in profile["columns"]
-            },
-            "missing_columns": [
-                col["name"]
-                for col in profile["columns"]
-                if col["missing_percentage"] > 0
-            ],
-            "potential_targets": [
-                r["message"]
-                for r in profile.get("recommendations", [])
-                if r["type"] == "target"
-            ][:3]
-        }
-
-    except Exception as e:
-        logger.error(f"Quick profile error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Return simplified summary
+    return {
+        "rows": profile["summary"]["total_rows"],
+        "columns": profile["summary"]["total_columns"],
+        "memory_mb": round(profile["summary"]["memory_usage_mb"], 2),
+        "column_types": {
+            col["name"]: col["semantic_type"]
+            for col in profile["columns"]
+        },
+        "missing_columns": [
+            col["name"]
+            for col in profile["columns"]
+            if col["missing_percentage"] > 0
+        ],
+        "potential_targets": [
+            r["message"]
+            for r in profile.get("recommendations", [])
+            if r["type"] == "target"
+        ][:3]
+    }
 
 
 @router.post("/profile/column/{column_name}")
+@handle_errors("Column profile error")
 async def profile_column(file_path: str, column_name: str):
     """Get detailed profile for a specific column."""
     profiler = get_data_profiler()
@@ -182,9 +174,6 @@ async def profile_column(file_path: str, column_name: str):
 
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
-    except Exception as e:
-        logger.error(f"Column profile error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/profile/metrics")

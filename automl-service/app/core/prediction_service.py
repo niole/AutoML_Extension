@@ -3,6 +3,7 @@
 import os
 import json
 import logging
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 
@@ -232,13 +233,7 @@ class PredictionService:
         return list(self._loaded_models.keys())
 
 
-# Singleton instance
-_prediction_service: Optional[PredictionService] = None
-
-
+@lru_cache()
 def get_prediction_service() -> PredictionService:
-    """Get the prediction service singleton."""
-    global _prediction_service
-    if _prediction_service is None:
-        _prediction_service = PredictionService()
-    return _prediction_service
+    """Get the prediction service singleton (cached)."""
+    return PredictionService()

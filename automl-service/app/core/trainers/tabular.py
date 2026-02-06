@@ -8,22 +8,9 @@ import numpy as np
 
 from app.db.models import ProblemType
 from .base import BaseTrainer, AdvancedConfig
+from .callbacks import TrainingProgressCallback
 
 logger = logging.getLogger(__name__)
-
-
-class TrainingProgressCallback:
-    """Callback for tracking training progress."""
-
-    def __init__(self, job_id: str, log_callback=None):
-        self.job_id = job_id
-        self.log_callback = log_callback
-
-    def on_progress(self, percent: float, message: str):
-        """Called to update progress percentage."""
-        if self.log_callback:
-            import asyncio
-            asyncio.create_task(self.log_callback(f"[{percent:.0f}%] {message}"))
 
 
 class TabularTrainer(BaseTrainer):
@@ -258,7 +245,10 @@ class TabularTrainer(BaseTrainer):
                 "neural_network": "NN_TORCH",
                 "tabpfn": "TABPFN",
             }
-            for model_key, hps in advanced_config.per_model_hyperparameters.items():
+            # PerModelHyperparameters is a Pydantic model; dump to dict
+            # excluding None values to iterate over provided overrides.
+            per_model_dict = advanced_config.per_model_hyperparameters.model_dump(exclude_none=True)
+            for model_key, hps in per_model_dict.items():
                 if hps and model_key in hp_map:
                     model_hps[hp_map[model_key]] = hps
             if model_hps:

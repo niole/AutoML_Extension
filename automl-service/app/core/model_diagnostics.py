@@ -6,6 +6,7 @@ Do NOT generate matplotlib/PNG images here.
 
 import os
 import logging
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -655,13 +656,7 @@ class ModelDiagnostics:
         return result
 
 
-# Singleton instance
-_model_diagnostics: Optional[ModelDiagnostics] = None
-
-
+@lru_cache()
 def get_model_diagnostics() -> ModelDiagnostics:
-    """Get the model diagnostics singleton."""
-    global _model_diagnostics
-    if _model_diagnostics is None:
-        _model_diagnostics = ModelDiagnostics()
-    return _model_diagnostics
+    """Get the model diagnostics singleton (cached)."""
+    return ModelDiagnostics()

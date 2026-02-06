@@ -2,6 +2,7 @@
 
 import os
 import logging
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
@@ -511,13 +512,7 @@ class DataProfiler:
         return "unknown"
 
 
-# Singleton instance
-_data_profiler: Optional[DataProfiler] = None
-
-
+@lru_cache()
 def get_data_profiler() -> DataProfiler:
-    """Get the data profiler singleton."""
-    global _data_profiler
-    if _data_profiler is None:
-        _data_profiler = DataProfiler()
-    return _data_profiler
+    """Get the data profiler singleton (cached)."""
+    return DataProfiler()

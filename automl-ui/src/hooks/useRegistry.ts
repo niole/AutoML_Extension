@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
+import { useAsyncOperation } from './useAsyncOperation'
 import type {
   RegisteredModel,
   ModelVersion,
@@ -50,54 +51,36 @@ export function useRegistry(): UseRegistryResult {
   const [modelVersions, setModelVersions] = useState<ModelVersion[]>([])
   const [modelsByStage, setModelsByStage] = useState<ModelsByStage | null>(null)
   const [modelCard, setModelCard] = useState<ModelCard | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const fetchRegisteredModels = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
+  const fetchRegisteredModelsOp = useAsyncOperation(
+    async () => {
       const { data } = await api.get<RegisteredModel[]>('registeredmodels')
       // Filter to only show models deployed from this application (prefixed with automlapp-)
       const filteredModels = data.filter(model => model.name.startsWith('automlapp-'))
       setRegisteredModels(filteredModels)
       return filteredModels
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch registered models'
-      setError(message)
-      return []
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to fetch registered models' }
+  )
 
-  const fetchModelVersions = useCallback(async (modelName: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const fetchModelVersionsOp = useAsyncOperation(
+    async (modelName: string) => {
       const { data } = await api.post<ModelVersion[]>('modelversions', { model_name: modelName })
       setModelVersions(data)
       return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch model versions'
-      setError(message)
-      return []
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to fetch model versions' }
+  )
 
-  const registerModel = useCallback(async (
-    modelPath: string,
-    modelName: string,
-    modelType: string,
-    description?: string,
-    metrics?: Record<string, number>,
-    jobId?: string
-  ) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const registerModelOp = useAsyncOperation(
+    async (
+      modelPath: string,
+      modelName: string,
+      modelType: string,
+      description?: string,
+      metrics?: Record<string, number>,
+      jobId?: string
+    ) => {
       const { data } = await api.post<RegisterModelResult>('registermodel', {
         model_path: modelPath,
         model_name: modelName,
@@ -107,24 +90,17 @@ export function useRegistry(): UseRegistryResult {
         job_id: jobId
       })
       return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to register model'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to register model' }
+  )
 
-  const transitionStage = useCallback(async (
-    modelName: string,
-    version: string,
-    stage: ModelStage,
-    archiveExisting = false
-  ) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const transitionStageOp = useAsyncOperation(
+    async (
+      modelName: string,
+      version: string,
+      stage: ModelStage,
+      archiveExisting = false
+    ) => {
       const { data } = await api.post<TransitionStageResult>('transitionstage', {
         model_name: modelName,
         version,
@@ -132,75 +108,47 @@ export function useRegistry(): UseRegistryResult {
         archive_existing: archiveExisting
       })
       return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to transition model stage'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to transition model stage' }
+  )
 
-  const updateDescription = useCallback(async (
-    modelName: string,
-    description: string,
-    version?: string
-  ) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const updateDescriptionOp = useAsyncOperation(
+    async (
+      modelName: string,
+      description: string,
+      version?: string
+    ) => {
       await api.post('updatedescription', {
         model_name: modelName,
         description,
         version
       })
-      return true
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update description'
-      setError(message)
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return true as const
+    },
+    { errorMessage: 'Failed to update description' }
+  )
 
-  const deleteModelVersion = useCallback(async (modelName: string, version: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const deleteModelVersionOp = useAsyncOperation(
+    async (modelName: string, version: string) => {
       await api.post('deleteversion', {
         model_name: modelName,
         version
       })
-      return true
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete model version'
-      setError(message)
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return true as const
+    },
+    { errorMessage: 'Failed to delete model version' }
+  )
 
-  const deleteModel = useCallback(async (modelName: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const deleteModelOp = useAsyncOperation(
+    async (modelName: string) => {
       await api.post('deletemodel', { model_name: modelName })
-      return true
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete model'
-      setError(message)
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+      return true as const
+    },
+    { errorMessage: 'Failed to delete model' }
+  )
 
-  const fetchModelCard = useCallback(async (modelName: string, version: string) => {
-    setLoading(true)
-    setError(null)
-    try {
+  const fetchModelCardOp = useAsyncOperation(
+    async (modelName: string, version: string) => {
       const { data } = await api.post<ModelCard>('modelcard', {
         model_name: modelName,
         version,
@@ -209,20 +157,91 @@ export function useRegistry(): UseRegistryResult {
       })
       setModelCard(data)
       return data
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch model card'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    { errorMessage: 'Failed to fetch model card' }
+  )
 
+  const downloadModelOp = useAsyncOperation(
+    async (modelName: string, version: string) => {
+      const { data } = await api.post<{ local_path: string }>('downloadmodel', {
+        model_name: modelName,
+        version
+      })
+      return data.local_path
+    },
+    { errorMessage: 'Failed to download model' }
+  )
+
+  // Derive combined loading/error from all operations
+  const loading = fetchRegisteredModelsOp.loading || fetchModelVersionsOp.loading ||
+    registerModelOp.loading || transitionStageOp.loading || updateDescriptionOp.loading ||
+    deleteModelVersionOp.loading || deleteModelOp.loading || fetchModelCardOp.loading ||
+    downloadModelOp.loading
+  const error = fetchRegisteredModelsOp.error ?? fetchModelVersionsOp.error ??
+    registerModelOp.error ?? transitionStageOp.error ?? updateDescriptionOp.error ??
+    deleteModelVersionOp.error ?? deleteModelOp.error ?? fetchModelCardOp.error ??
+    downloadModelOp.error ?? null
+
+  // Wrap execute calls to preserve the original return-type contracts
+  const fetchRegisteredModels = useCallback(async () => {
+    const result = await fetchRegisteredModelsOp.execute()
+    return result ?? []
+  }, [fetchRegisteredModelsOp.execute])
+
+  const fetchModelVersions = useCallback(async (modelName: string) => {
+    const result = await fetchModelVersionsOp.execute(modelName)
+    return result ?? []
+  }, [fetchModelVersionsOp.execute])
+
+  const registerModel = useCallback(async (
+    modelPath: string,
+    modelName: string,
+    modelType: string,
+    description?: string,
+    metrics?: Record<string, number>,
+    jobId?: string
+  ) => {
+    const result = await registerModelOp.execute(modelPath, modelName, modelType, description, metrics, jobId)
+    return result ?? null
+  }, [registerModelOp.execute])
+
+  const transitionStage = useCallback(async (
+    modelName: string,
+    version: string,
+    stage: ModelStage,
+    archiveExisting?: boolean
+  ) => {
+    const result = await transitionStageOp.execute(modelName, version, stage, archiveExisting ?? false)
+    return result ?? null
+  }, [transitionStageOp.execute])
+
+  const updateDescription = useCallback(async (
+    modelName: string,
+    description: string,
+    version?: string
+  ) => {
+    const result = await updateDescriptionOp.execute(modelName, description, version)
+    return result ?? false
+  }, [updateDescriptionOp.execute])
+
+  const deleteModelVersion = useCallback(async (modelName: string, version: string) => {
+    const result = await deleteModelVersionOp.execute(modelName, version)
+    return result ?? false
+  }, [deleteModelVersionOp.execute])
+
+  const deleteModel = useCallback(async (modelName: string) => {
+    const result = await deleteModelOp.execute(modelName)
+    return result ?? false
+  }, [deleteModelOp.execute])
+
+  const fetchModelCard = useCallback(async (modelName: string, version: string) => {
+    const result = await fetchModelCardOp.execute(modelName, version)
+    return result ?? null
+  }, [fetchModelCardOp.execute])
+
+  // fetchModelsByStage is a composite operation that calls fetchModelVersions internally
   const fetchModelsByStage = useCallback(async (modelName: string) => {
-    setLoading(true)
-    setError(null)
     try {
-      // Fetch all versions and organize by stage
       const versions = await fetchModelVersions(modelName)
       const byStage: ModelsByStage = {
         model_name: modelName,
@@ -243,32 +262,15 @@ export function useRegistry(): UseRegistryResult {
 
       setModelsByStage(byStage)
       return byStage
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch models by stage'
-      setError(message)
+    } catch {
       return null
-    } finally {
-      setLoading(false)
     }
   }, [fetchModelVersions])
 
   const downloadModel = useCallback(async (modelName: string, version: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post<{ local_path: string }>('downloadmodel', {
-        model_name: modelName,
-        version
-      })
-      return data.local_path
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to download model'
-      setError(message)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    const result = await downloadModelOp.execute(modelName, version)
+    return result ?? null
+  }, [downloadModelOp.execute])
 
   return {
     registeredModels,

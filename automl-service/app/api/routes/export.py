@@ -2,7 +2,7 @@
 
 import logging
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
@@ -14,27 +14,11 @@ from app.core.model_diagnostics import get_model_diagnostics
 from app.core.notebook_generator import generate_binary_classification_notebook
 from app.dependencies import get_db
 from app.db import crud
+from app.api.utils import get_job_paths
+from app.api.error_handler import handle_errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-async def get_job_paths(db: AsyncSession, job_id: str) -> Tuple[str, str, Optional[str]]:
-    """
-    Look up a job and return (model_path, model_type, file_path).
-    Raises HTTPException if job not found or model_path not available.
-    """
-    job = await crud.get_job(db, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
-
-    if not job.model_path:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Job {job_id} has no trained model. Status: {job.status.value}"
-        )
-
-    return job.model_path, job.model_type.value, job.file_path
 
 
 class ExportONNXRequest(BaseModel):
@@ -109,7 +93,7 @@ async def export_to_onnx(
 ):
     """Export model to ONNX format (identified by job_id)."""
     # Look up job to get model_path
-    model_path, model_type, _ = await get_job_paths(db, request.job_id)
+    model_path, model_type, _, _ = await get_job_paths(db, request.job_id)
     actual_model_type = request.model_type or model_type
 
     exporter = get_model_exporter()
@@ -129,7 +113,7 @@ async def export_deployment_package(
 ):
     """Export model as deployment package with all necessary files (identified by job_id)."""
     # Look up job to get model_path
-    model_path, model_type, _ = await get_job_paths(db, request.job_id)
+    model_path, model_type, _, _ = await get_job_paths(db, request.job_id)
     actual_model_type = request.model_type or model_type
 
     exporter = get_model_exporter()
@@ -150,7 +134,7 @@ async def get_learning_curves(
 ):
     """Get learning curves for a trained model (identified by job_id)."""
     # Look up job to get model_path
-    model_path, model_type, _ = await get_job_paths(db, request.job_id)
+    model_path, model_type, _, _ = await get_job_paths(db, request.job_id)
     actual_model_type = request.model_type or model_type
 
     diagnostics = get_model_diagnostics()
@@ -254,6 +238,7 @@ class ExportNotebookRequest(BaseModel):
 
 
 @router.post("/export/notebook")
+@handle_errors("Error generating notebook")
 async def export_notebook(
     request: ExportNotebookRequest,
     db: AsyncSession = Depends(get_db)
@@ -278,18 +263,13 @@ async def export_notebook(
             detail="Notebook export is not yet supported for this problem type"
         )
 
-    try:
-        # Generate the notebook
-        notebook_content = generate_binary_classification_notebook(job)
-        filename = f"{job.name.replace(' ', '_')}_automl.ipynb"
+    # Generate the notebook
+    notebook_content = generate_binary_classification_notebook(job)
+    filename = f"{job.name.replace(' ', '_')}_automl.ipynb"
 
-        # Return as JSON for frontend to handle download
-        return {
-            "success": True,
-            "filename": filename,
-            "notebook": notebook_content
-        }
-
-    except Exception as e:
-        logger.error(f"Error generating notebook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Return as JSON for frontend to handle download
+    return {
+        "success": True,
+        "filename": filename,
+        "notebook": notebook_content
+    }
