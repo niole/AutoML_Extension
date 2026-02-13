@@ -337,9 +337,17 @@ class CleanupService:
 
         for entry in orphans["orphaned_mlflow_runs"]:
             try:
-                shutil.rmtree(entry["path"])
+                run_path = entry["path"]
+                shutil.rmtree(run_path)
                 deleted_mlflow_runs.append(entry)
-                logger.info(f"Deleted orphaned MLflow run: {entry['path']}")
+                logger.info(f"Deleted orphaned MLflow run: {run_path}")
+                # Remove experiment directory if empty (only meta.yaml remains)
+                exp_dir = os.path.dirname(run_path)
+                if os.path.isdir(exp_dir):
+                    remaining = [e for e in os.listdir(exp_dir) if e != "meta.yaml"]
+                    if not remaining:
+                        shutil.rmtree(exp_dir)
+                        logger.info(f"Deleted empty MLflow experiment dir: {exp_dir}")
             except Exception as e:
                 errors.append(f"mlflow_run {entry['path']}: {e}")
 
@@ -444,6 +452,14 @@ def _remove_mlflow_run_from_disk(run) -> None:
         if trash_folder.is_dir():
             shutil.rmtree(trash_folder)
             logger.info(f"Deleted MLflow trash entry: {trash_folder}")
+
+        # Remove experiment directory if empty (only meta.yaml remains)
+        exp_dir = run_folder.parent  # …/mlruns/{exp_id}
+        if exp_dir.is_dir():
+            remaining = [e.name for e in exp_dir.iterdir() if e.name != "meta.yaml"]
+            if not remaining:
+                shutil.rmtree(exp_dir)
+                logger.info(f"Deleted empty MLflow experiment dir: {exp_dir}")
     except Exception as e:
         logger.warning(f"Failed to remove MLflow run folder from disk: {e}")
 
