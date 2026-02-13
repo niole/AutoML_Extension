@@ -1,0 +1,1 @@
+"""Compatibility route registration modules."""

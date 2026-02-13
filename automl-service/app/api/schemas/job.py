@@ -486,6 +486,23 @@ class JobListRequest(BaseModel):
     project_name: Optional[str] = Field(None, description="Filter by project name")
 
 
+class CleanupRequest(BaseModel):
+    """Request schema for bulk job cleanup."""
+
+    statuses: List[str] = Field(
+        default_factory=lambda: ["failed", "cancelled"],
+        description="Job statuses to clean up",
+    )
+    older_than_days: Optional[int] = Field(
+        None,
+        description="Only include jobs older than this many days",
+    )
+    include_orphans: bool = Field(
+        False,
+        description="Also clean orphaned artifacts",
+    )
+
+
 class JobListResponse(BaseModel):
     """Response schema for job list."""
 

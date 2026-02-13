@@ -1,3 +1,5 @@
+import { getBasePath } from '../utils/basePath'
+
 // Extend window type for runtime config
 declare global {
   interface Window {
@@ -9,14 +11,6 @@ declare global {
 
 // For Domino Apps: use simple single-segment endpoints
 const DOMINO_MODE = true
-
-export const API_BASE_URL = '/api/v1' // Used for direct API calls (non-Domino)
-
-// Get the app base path from current URL (e.g., /apps/... or /apps-internal/...)
-function getAppBasePath(): string {
-  const match = window.location.pathname.match(/^(\/apps(?:-internal)?\/[a-z0-9_-]+)/i)
-  return match ? match[1] : ''
-}
 
 /**
  * Convert an endpoint name to a Domino-safe single-segment path.
@@ -66,7 +60,7 @@ class ApiClient {
     if (DOMINO_MODE) {
       // Convert to single-segment Domino-safe path (convention: "svc" + endpoint)
       const mappedPath = toDominoPath(cleanEndpoint)
-      const basePath = getAppBasePath()
+      const basePath = getBasePath()
       fullUrl = `${basePath}/${mappedPath}`
     } else {
       fullUrl = `/api/v1/${cleanEndpoint}`

@@ -147,7 +147,7 @@ async def get_learning_curves(
         return LearningCurvesResponse(**result)
     except Exception as e:
         logger.error(f"Error getting learning curves: {e}")
-        return LearningCurvesResponse(error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to generate learning curves: {e}")
 
 
 @router.post("/compare-models", response_model=ModelComparisonResponse)
@@ -164,7 +164,7 @@ async def compare_models(request: ModelComparisonRequest):
         return ModelComparisonResponse(**result)
     except Exception as e:
         logger.error(f"Error comparing models: {e}")
-        return ModelComparisonResponse(error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to compare models: {e}")
 
 
 @router.get("/export/formats")

@@ -1,9 +1,9 @@
 """Database CRUD operations."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Sequence
 
-from sqlalchemy import select, update, desc
+from sqlalchemy import select, update, desc, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Job, JobLog, JobStatus, ModelType, RegisteredModel
@@ -68,6 +68,15 @@ async def get_jobs(
         query = query.where(Job.project_name == project_name)
 
     query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def get_jobs_by_statuses(
+    db: AsyncSession, statuses: list[JobStatus]
+) -> Sequence[Job]:
+    """Get jobs matching any of the given statuses, ordered by created_at (FIFO)."""
+    query = select(Job).where(Job.status.in_(statuses)).order_by(Job.created_at)
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -227,3 +236,48 @@ async def get_registered_models(
         select(RegisteredModel).order_by(desc(RegisteredModel.created_at))
     )
     return result.scalars().all()
+
+
+# Cleanup helpers
+
+async def delete_job_logs(db: AsyncSession, job_id: str) -> int:
+    """Delete all log entries for a job. Returns number of rows deleted."""
+    result = await db.execute(delete(JobLog).where(JobLog.job_id == job_id))
+    await db.commit()
+    return result.rowcount
+
+
+async def delete_registered_models_for_job(db: AsyncSession, job_id: str) -> int:
+    """Delete registered model records for a job. Returns number of rows deleted."""
+    result = await db.execute(delete(RegisteredModel).where(RegisteredModel.job_id == job_id))
+    await db.commit()
+    return result.rowcount
+
+
+async def count_jobs_with_file_path(db: AsyncSession, file_path: str) -> int:
+    """Count how many jobs reference a given file_path."""
+    result = await db.execute(
+        select(func.count()).select_from(Job).where(Job.file_path == file_path)
+    )
+    return result.scalar()
+
+
+async def get_jobs_for_cleanup(
+    db: AsyncSession,
+    statuses: list[JobStatus],
+    older_than_days: Optional[int] = None,
+) -> Sequence[Job]:
+    """Get jobs matching statuses and optional age filter, ordered by created_at."""
+    query = select(Job).where(Job.status.in_(statuses))
+    if older_than_days is not None:
+        cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+        query = query.where(Job.created_at < cutoff)
+    return (await db.execute(query.order_by(Job.created_at))).scalars().all()
+
+
+async def count_job_logs(db: AsyncSession, job_id: str) -> int:
+    """Count log entries for a job."""
+    result = await db.execute(
+        select(func.count()).select_from(JobLog).where(JobLog.job_id == job_id)
+    )
+    return result.scalar()

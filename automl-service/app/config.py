@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     default_preview_rows: int = 10
     max_shap_samples: int = 100
     max_scatter_points: int = 500
+    max_concurrent_jobs: int = 2
 
     # CORS
     cors_origins: list[str] = ["*"]

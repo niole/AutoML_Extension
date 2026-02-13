@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.db import crud
-from app.core.domino_registry import get_domino_registry, DominoModelRegistry
+from app.core.domino_registry import get_domino_registry
 from app.api.schemas.model import (
     RegisteredModelResponse,
     DeployModelRequest,
     DeploymentResponse,
 )
+from app.services.model_service import list_registered_models_response
 
 router = APIRouter()
 
@@ -18,8 +19,7 @@ router = APIRouter()
 @router.get("", response_model=list[RegisteredModelResponse])
 async def list_models(db: AsyncSession = Depends(get_db)):
     """List all registered models."""
-    models = await crud.get_registered_models(db)
-    return [RegisteredModelResponse.model_validate(m) for m in models]
+    return await list_registered_models_response(db)
 
 
 @router.get("/{model_name}", response_model=RegisteredModelResponse)

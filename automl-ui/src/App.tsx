@@ -6,22 +6,7 @@ import Dashboard from './pages/Dashboard'
 import NewJob from './pages/NewJob'
 import JobDetail from './pages/JobDetail'
 import EDAAnalysis from './pages/EDAAnalysis'
-
-const getBasePath = (): string => {
-  // Match both /apps/ and /apps-internal/ paths for Domino
-  const appsMatch = window.location.pathname.match(/^(\/apps(?:-internal)?\/[a-z0-9_-]+)/i)
-  if (appsMatch) {
-    console.log('[AutoML] Detected basename:', appsMatch[1])
-    return appsMatch[1]
-  }
-  const proxyMatch = window.location.pathname.match(/^(\/notebookSession\/[^/]+\/proxy\/\d+)/)
-  if (proxyMatch) {
-    console.log('[AutoML] Detected basename:', proxyMatch[1])
-    return proxyMatch[1]
-  }
-  console.log('[AutoML] No basename detected')
-  return ''
-}
+import { getBasePath } from './utils/basePath'
 
 // Fallback for unmatched routes
 function NoRouteMatch() {

@@ -55,3 +55,12 @@ class FileUploadResponse(BaseModel):
     file_size: int
     columns: list[str]
     row_count: int
+
+
+class FilePreviewRequest(BaseModel):
+    """Request schema for local file preview."""
+
+    file_path: str
+    limit: int = 100
+    offset: int = 0
+    rows: Optional[int] = None  # Legacy support

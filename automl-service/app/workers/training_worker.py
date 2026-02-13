@@ -22,6 +22,13 @@ from app.core.model_loader import load_predictor, load_dataframe
 logger = logging.getLogger(__name__)
 
 
+async def _check_cancelled(job_id: str) -> None:
+    """Raise CancelledError if the job has been cancelled via the queue."""
+    from app.core.job_queue import get_job_queue
+    if get_job_queue().is_job_cancelled(job_id):
+        raise asyncio.CancelledError(f"Job {job_id} cancelled via queue")
+
+
 def parse_advanced_config(config_dict: Dict[str, Any]) -> AdvancedConfig:
     """Parse advanced config dict into AdvancedConfig (Pydantic) object.
 
@@ -125,6 +132,8 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 logger.error(f"Job not found: {job_id}")
                 return
 
+            await _check_cancelled(job_id)
+
             # Update status to running
             await crud.update_job_status(
                 db, job_id, JobStatus.RUNNING, started_at=datetime.utcnow()
@@ -150,6 +159,8 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
 
             logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
             await crud.add_job_log(db, job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO")
+
+            await _check_cancelled(job_id)
 
             # Check if file exists
             import os
@@ -259,6 +270,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             )
 
             await crud.add_job_log(db, job_id, "Training completed successfully")
+            await _check_cancelled(job_id)
 
             # Update progress with actual models trained from results
             num_models = result.get("metrics", {}).get("num_models", 0)
@@ -346,6 +358,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             )
 
             await crud.add_job_log(db, job_id, f"Model runs logged to MLflow experiment")
+            await _check_cancelled(job_id)
 
             # Update progress: finalizing
             await crud.update_job_progress(
@@ -418,6 +431,20 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                     logger.warning(f"Could not end MLflow run: {mlflow_err}")
 
             logger.info(f"Training job completed: {job_id}")
+
+        except asyncio.CancelledError:
+            logger.info(f"Training job cancelled: {job_id}")
+            await crud.update_job_status(
+                db, job_id, JobStatus.CANCELLED,
+                completed_at=datetime.utcnow(),
+            )
+            await crud.add_job_log(db, job_id, "Training cancelled", "WARNING")
+            if tracker:
+                try:
+                    tracker.end_run(status="KILLED")
+                except Exception:
+                    pass
+            raise  # Re-raise so the Task is properly marked cancelled
 
         except Exception as e:
             logger.error(f"Training job failed: {job_id} - {str(e)}")

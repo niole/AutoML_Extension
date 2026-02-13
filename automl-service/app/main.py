@@ -39,8 +39,13 @@ async def lifespan(app: FastAPI):
     os.makedirs(os.path.join(settings.datasets_path, "uploads"), exist_ok=True)
     logger.info(f"Required directories created (uploads: {settings.uploads_path})")
 
+    from app.core.job_queue import get_job_queue
+    queue = get_job_queue()
+    await queue.startup()
+
     yield
 
+    await queue.shutdown(timeout=30.0)
     logger.info("Shutting down application")
 
 

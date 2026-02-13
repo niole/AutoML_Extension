@@ -14,6 +14,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.domino_model_api import get_domino_model_api
+from app.services.deployment_service import (
+    list_deployments_safe,
+    list_model_apis_safe,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,14 +90,7 @@ async def list_model_apis(
     project_id: Optional[str] = Query(None, description="Filter by project ID")
 ):
     """List all Model API definitions."""
-    try:
-        api = get_domino_model_api()
-        result = await api.list_model_apis(project_id=project_id)
-        # Always return the result - it now gracefully handles errors
-        return result
-    except Exception as e:
-        # Return empty list on any error
-        return {"success": True, "data": [], "error": str(e)}
+    return await list_model_apis_safe(project_id=project_id)
 
 
 @router.post("/model-apis")
@@ -200,17 +197,10 @@ async def list_deployments(
     model_api_id: Optional[str] = Query(None, description="Filter by Model API ID"),
 ):
     """List all Model Deployments."""
-    try:
-        api = get_domino_model_api()
-        result = await api.list_deployments(
-            project_id=project_id,
-            model_api_id=model_api_id,
-        )
-        # Always return the result - it now gracefully handles errors
-        return result
-    except Exception as e:
-        # Return empty list on any error
-        return {"success": True, "data": [], "error": str(e)}
+    return await list_deployments_safe(
+        project_id=project_id,
+        model_api_id=model_api_id,
+    )
 
 
 @router.post("/deployments")
@@ -426,58 +416,12 @@ async def deploy_from_job(
 
     This creates the deployment files and deploys the model.
     """
-    from app.dependencies import get_db_session
-    from app.db import crud
+    from app.services.deployment_service import deploy_from_job as deploy_from_job_service
 
-    # Get job details using async session
-    async with get_db_session() as db:
-        job = await crud.get_job(db, job_id)
-
-        if not job:
-            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
-
-    from app.db.models import JobStatus
-    if job.status != JobStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Job must be completed to deploy. Current status: {job.status.value}"
-        )
-
-    # Use job name as model name if not provided
-    deploy_name = model_name or job.name or f"automl-model-{job_id[:8]}"
-
-    # Get model path from job
-    model_path = job.model_path
-
-    if not model_path:
-        raise HTTPException(
-            status_code=400,
-            detail="Model path not found for this job"
-        )
-
-    # Create deployment wrapper file path
-    # In a real implementation, you'd generate a model.py wrapper file
-    model_file = f"{model_path}/model.py"
-
-    api = get_domino_model_api()
-    result = await api.deploy_model(
-        model_name=deploy_name,
-        model_file=model_file,
+    return await deploy_from_job_service(
+        job_id=job_id,
+        model_name=model_name,
         function_name=function_name,
-        description=f"AutoML model from job {job_id}. Type: {job.model_type}",
         min_replicas=min_replicas,
         max_replicas=max_replicas,
-        auto_start=True,
     )
-
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result.get("error"))
-
-    return {
-        "success": True,
-        "job_id": job_id,
-        "deployment_id": result.get("deployment_id"),
-        "model_api_id": result.get("model_api_id"),
-        "endpoint_url": result.get("endpoint_url"),
-        "message": f"Model '{deploy_name}' deployed from job {job_id}",
-    }
