@@ -41,8 +41,9 @@ Dockerfile               Container build for Domino deployment
 ## Features
 
 - **Training Wizard**: 4-step workflow (data source, model type, configuration, review) with advanced AutoGluon config (bagging, stacking, HPO, pseudo-labeling, distillation)
+- **Dual Training Execution**: Run training in the in-app queue (`local`) or as an external Domino Job (`domino_job`)
 - **Model Diagnostics**: Feature importance, leaderboard, confusion matrix, ROC/PR curves, SHAP explanations, learning curves
-- **Exploratory Data Analysis**: Interactive data profiling, column explorer, correlation matrix, data quality checks, notebook export
+- **Exploratory Data Analysis**: Interactive data profiling, column explorer, correlation matrix, data quality checks, notebook export, optional async Domino Job execution
 - **Dataset Management**: Upload CSV/Parquet or connect to Domino Datasets
 - **Model Registry**: MLflow integration for versioning and stage transitions
 - **Model Export**: ONNX, PMML, and pickle formats
@@ -91,82 +92,133 @@ The `app.sh` script starts both backend and frontend as a combined Domino App:
 ./app.sh
 ```
 
+### Training Execution Modes
+
+Training requests support two execution targets:
+
+- `local` (default): Runs in the app process using the in-app queue
+- `domino_job`: Launches an external Domino Job via `python-domino`
+
+Both modes are available from the UI wizard and API payloads via:
+
+- `execution_target`: `"local"` or `"domino_job"`
+- `run_as_domino_job`: legacy boolean alias for external execution
+
+### Async EDA Profiling
+
+EDA supports both synchronous and asynchronous profiling:
+
+- Synchronous: profile in-app and return results immediately
+- Asynchronous: launch an external Domino Job, then poll for status/results
+
+Async endpoints:
+
+- `POST /svc/v1/profiling/profile/async/start`
+- `POST /svc/v1/profiling/profile/async/status`
+- `GET /svc/v1/profiling/profile/async/{request_id}`
+
 ## API Reference
 
 ### Jobs
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/jobs` | Create training job |
-| GET | `/api/v1/jobs` | List jobs (filter by status, owner, project) |
-| GET | `/api/v1/jobs/{id}` | Get job details |
-| DELETE | `/api/v1/jobs/{id}` | Delete job |
-| POST | `/api/v1/jobs/{id}/cancel` | Cancel running job |
-| GET | `/api/v1/jobs/{id}/progress` | Get training progress |
-| GET | `/api/v1/jobs/{id}/logs` | Get job logs |
-| POST | `/api/v1/jobs/{id}/register` | Register model to MLflow |
+| POST | `/svc/v1/jobs` | Create training job |
+| GET | `/svc/v1/jobs` | List jobs (filter by status, owner, project) |
+| GET | `/svc/v1/jobs/{id}` | Get job details |
+| DELETE | `/svc/v1/jobs/{id}` | Delete job |
+| POST | `/svc/v1/jobs/{id}/cancel` | Cancel running job |
+| GET | `/svc/v1/jobs/{id}/progress` | Get training progress |
+| GET | `/svc/v1/jobs/{id}/logs` | Get job logs |
+| POST | `/svc/v1/jobs/{id}/register` | Register model to MLflow |
 | WS | `/ws/jobs/{id}` | Real-time progress updates |
 
 ### Datasets
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/datasets` | List local datasets |
-| POST | `/api/v1/datasets/upload` | Upload CSV/Parquet |
-| GET | `/api/v1/datasets/{id}` | Get dataset metadata |
-| GET | `/api/v1/datasets/{id}/preview` | Preview rows |
-| GET | `/api/v1/datasets/{id}/download` | Download file |
-| DELETE | `/api/v1/datasets/{id}` | Delete dataset |
-| GET | `/api/v1/domino-datasets` | List Domino Datasets |
+| GET | `/svc/v1/datasets` | List local datasets |
+| POST | `/svc/v1/datasets/upload` | Upload CSV/Parquet |
+| GET | `/svc/v1/datasets/{id}` | Get dataset metadata |
+| GET | `/svc/v1/datasets/{id}/preview` | Preview rows |
+| GET | `/svc/v1/datasets/{id}/schema` | Get inferred schema |
+| POST | `/svc/v1/datasets/preview` | Preview by direct file path |
+| GET | `/svcdatasets` | Domino-compatible single-segment dataset list route |
 
 ### Model Diagnostics
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/models/{id}/diagnostics/feature-importance` | Feature importance |
-| GET | `/api/v1/models/{id}/diagnostics/leaderboard` | Model leaderboard |
-| GET | `/api/v1/models/{id}/diagnostics/confusion-matrix` | Confusion matrix |
-| GET | `/api/v1/models/{id}/diagnostics/roc-curve` | ROC curve |
-| GET | `/api/v1/models/{id}/diagnostics/precision-recall` | PR curve |
-| GET | `/api/v1/models/{id}/diagnostics/regression` | Regression metrics |
-| GET | `/api/v1/models/{id}/diagnostics/shap` | SHAP explanations |
+| POST | `/svc/v1/predictions/model/feature-importance` | Feature importance |
+| POST | `/svc/v1/predictions/model/leaderboard` | Model leaderboard |
+| POST | `/svc/v1/predictions/model/confusion-matrix` | Confusion matrix |
+| POST | `/svc/v1/predictions/model/roc-curve` | ROC curve |
+| POST | `/svc/v1/predictions/model/precision-recall` | PR curve |
+| POST | `/svc/v1/predictions/model/regression-diagnostics` | Regression diagnostics |
 
 ### Predictions
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/predict/{id}` | Single/batch prediction |
-| POST | `/api/v1/predict/{id}/file` | Predict from CSV upload |
-| POST | `/api/v1/batch-predict/{id}` | Batch prediction |
-| POST | `/api/v1/forecast/{id}` | Time series forecast |
+| POST | `/svc/v1/predictions/predict` | Single prediction |
+| POST | `/svc/v1/predictions/predict/batch` | Batch prediction |
+| GET | `/svc/v1/predictions/model/{model_id}/info` | Get loaded model info |
+| DELETE | `/svc/v1/predictions/model/{model_id}/unload` | Unload model from memory |
+| GET | `/svc/v1/predictions/models/loaded` | List loaded models |
 
 ### Registry & Export
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/registry/register` | Register model to MLflow |
-| GET | `/api/v1/registry/models` | List registered models |
-| POST | `/api/v1/export/{id}/onnx` | Export to ONNX |
-| POST | `/api/v1/export/{id}/pmml` | Export to PMML |
-| POST | `/api/v1/export/{id}/pickle` | Export to pickle |
+| POST | `/svc/v1/registry/register` | Register model to MLflow |
+| GET | `/svc/v1/registry/models` | List registered models |
+| POST | `/svc/v1/export/export/onnx` | Export to ONNX |
+| POST | `/svc/v1/export/export/deployment` | Export deployment bundle |
+| POST | `/svc/v1/export/export/notebook` | Export notebook |
+| GET | `/svc/v1/export/export/formats` | List export formats |
 
 ### Deployments
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/deployments/deploy/{id}` | Deploy to Domino Model API |
-| GET | `/api/v1/deployments` | List deployments |
-| POST | `/api/v1/deployments/{id}/start` | Start deployment |
-| POST | `/api/v1/deployments/{id}/stop` | Stop deployment |
+| GET | `/svc/v1/deployments/model-apis` | List model APIs |
+| POST | `/svc/v1/deployments/model-apis` | Create model API |
+| GET | `/svc/v1/deployments/deployments` | List deployments |
+| POST | `/svc/v1/deployments/deployments` | Create deployment |
+| POST | `/svc/v1/deployments/quick-deploy` | Create API + version + deployment in one call |
+| POST | `/svc/v1/deployments/deploy-from-job/{job_id}` | Deploy from completed AutoML job |
+
+### Domino Compatibility Routes
+
+For Domino proxy constraints, the backend also exposes single-segment `/svc*` routes (examples):
+
+- `POST /svcjobcreate`
+- `POST /svcjobprogress`
+- `POST /svcprofileasyncstart`
+- `POST /svcprofileasyncstatus`
+- `GET /svcdeployments`
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | No | SQLite URL (default: `sqlite:///./automl.db`) |
+| `DATABASE_URL` | No | SQLite URL (default local: `sqlite:///./automl.db`, Domino: `sqlite:////mnt/data/automl.db`) |
 | `MODELS_PATH` | No | Model storage directory |
 | `DATASETS_PATH` | No | Dataset storage directory |
 | `UPLOADS_PATH` | No | Upload directory |
 | `TEMP_PATH` | No | Temp directory |
-| `DOMINO_USER_API_KEY` | Domino only | Domino API key |
-| `DOMINO_API_HOST` | Domino only | Domino API endpoint |
+| `EDA_RESULTS_PATH` | No | Shared EDA async result path |
+| `DOMINO_API_PROXY` | Domino app | Domino proxy base URL used by API clients |
+| `DOMINO_API_HOST` | Domino only | Domino API host |
+| `DOMINO_API_KEY` | Optional | Domino API key (fallback auth) |
+| `DOMINO_USER_API_KEY` | Optional | Legacy Domino API key |
+| `DOMINO_TOKEN_FILE` | Optional | Token file path for Domino SDK/auth fallback |
+| `API_KEY_OVERRIDE` | Optional | Explicit API key override (bypasses localhost token endpoint) |
 | `DOMINO_PROJECT_ID` | Domino only | Current project ID |
 | `DOMINO_PROJECT_NAME` | Domino only | Current project name |
+| `DOMINO_PROJECT_OWNER` | Domino only | Current project owner |
+| `DOMINO_TRAINING_HARDWARE_TIER_NAME` | Optional | Default hardware tier for external Domino training jobs |
+| `DOMINO_TRAINING_ENVIRONMENT_ID` | Optional | Default environment for external Domino training jobs |
+| `DOMINO_EDA_HARDWARE_TIER_NAME` | Optional | Default hardware tier for async EDA jobs |
+| `DOMINO_EDA_ENVIRONMENT_ID` | Optional | Default environment for async EDA jobs |
 | `MLFLOW_TRACKING_URI` | Domino only | MLflow tracking server |
+| `MLFLOW_TRACKING_TOKEN` | Optional | MLflow auth token |
+| `ENABLE_LOCAL_COMPUTE` | No | Enable local in-app queue execution (`true`/`false`) |
+| `WORKERS` | No | Uvicorn worker count (use `1` for local queue mode) |
 
 ## Technology Stack
 
