@@ -3,6 +3,7 @@
 import logging
 import os
 import shlex
+import subprocess
 from functools import lru_cache
 from typing import Any, Optional
 
@@ -62,8 +63,8 @@ class DominoJobLauncher:
         return self._domino_client
 
     @staticmethod
-    def _build_module_command(module: str, args: dict[str, Any]) -> str:
-        parts = ["python", "-m", module]
+    def _build_cli_args(args: dict[str, Any]) -> str:
+        parts: list[str] = []
         for key, value in args.items():
             if value is None:
                 continue
@@ -71,11 +72,29 @@ class DominoJobLauncher:
             parts.extend([flag, str(value)])
         return " ".join(shlex.quote(part) for part in parts)
 
+    @staticmethod
+    def _build_script_command(script_path: str, cli_args: str) -> str:
+        command = f'"$PYTHON_BIN" {shlex.quote(script_path)}'
+        if cli_args:
+            command = f"{command} {cli_args}"
+        return command
+
+    @staticmethod
+    def _build_module_command(module: str, cli_args: str) -> str:
+        command = f'"$PYTHON_BIN" -m {shlex.quote(module)}'
+        if cli_args:
+            command = f"{command} {cli_args}"
+        return command
+
     def _build_command(self, module: str, args: dict[str, Any]) -> str:
         """Build a Domino Job command that works from repo root or service dir."""
-        module_command = self._build_module_command(module, args)
+        cli_args = self._build_cli_args(args)
+        script_path = f"{module.replace('.', '/')}.py"
+        script_command = self._build_script_command(script_path, cli_args)
+        module_command = self._build_module_command(module, cli_args)
         service_dir = os.environ.get("AUTOML_SERVICE_DIR", "automl-service")
         quoted_service_dir = shlex.quote(service_dir)
+        quoted_script_path = shlex.quote(script_path)
         shell_script = (
             f"if [ -d {quoted_service_dir} ]; then "
             f"cd {quoted_service_dir}; "
@@ -84,7 +103,17 @@ class DominoJobLauncher:
             "Set AUTOML_SERVICE_DIR to the backend path.' >&2; "
             "exit 1; "
             "fi; "
-            f"{module_command}"
+            "PYTHON_BIN=\"${PYTHON_BIN:-$(command -v python || command -v python3)}\"; "
+            "if [ -z \"$PYTHON_BIN\" ]; then "
+            "echo 'Unable to locate python interpreter (python/python3).' >&2; "
+            "exit 1; "
+            "fi; "
+            f"if [ -f {quoted_script_path} ]; then "
+            f"{script_command}; "
+            "else "
+            f"echo 'Runner script {script_path} not found; falling back to module import.' >&2; "
+            f"{module_command}; "
+            "fi"
         )
         return f"bash -lc {shlex.quote(shell_script)}"
 
@@ -97,6 +126,73 @@ class DominoJobLauncher:
             or response.get("job_id")
             or response.get("run_id")
         )
+
+    @staticmethod
+    def _resolve_launch_commit_id() -> Optional[str]:
+        """Resolve commit used for child Domino jobs.
+
+        Priority:
+        1) Explicit env override
+        2) Current checked-out git commit
+        """
+        for key in (
+            "DOMINO_JOB_COMMIT_ID",
+            "AUTOML_DOMINO_JOB_COMMIT_ID",
+            "DOMINO_STARTING_COMMIT_ID",
+            "DOMINO_COMMIT_ID",
+            "DOMINO_GIT_COMMIT",
+        ):
+            value = os.environ.get(key)
+            if value:
+                return value.strip()
+
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            commit_id = result.stdout.strip()
+            return commit_id or None
+        except Exception:
+            return None
+
+    def _job_start(
+        self,
+        domino: Domino,
+        *,
+        command: str,
+        title: str,
+        hardware_tier_name: Optional[str],
+        environment_id: Optional[str],
+    ) -> Any:
+        """Launch a Domino job while pinning to the current commit when possible."""
+        kwargs: dict[str, Any] = {
+            "command": command,
+            "title": title,
+            "hardware_tier_name": hardware_tier_name,
+            "environment_id": environment_id,
+        }
+        commit_id = self._resolve_launch_commit_id()
+        if commit_id:
+            kwargs["commit_id"] = commit_id
+            logger.info("Launching Domino child job pinned to commit %s", commit_id[:12])
+        else:
+            logger.warning(
+                "No commit id resolved for Domino child job launch; "
+                "Domino will use the project default branch/commit."
+            )
+
+        try:
+            return domino.job_start(**kwargs)
+        except TypeError as e:
+            message = str(e)
+            if kwargs.get("commit_id") and "commit_id" in message and "unexpected keyword argument" in message:
+                # Older python-domino versions may not expose commit_id.
+                kwargs.pop("commit_id", None)
+                return domino.job_start(**kwargs)
+            raise
 
     def _run_url(self, job_id: str) -> Optional[str]:
         host = self._host()
@@ -125,7 +221,8 @@ class DominoJobLauncher:
                 "app.workers.domino_training_runner",
                 {"job_id": job_id},
             )
-            response = domino.job_start(
+            response = self._job_start(
+                domino,
                 command=command,
                 title=title or f"AutoML Training {job_id[:8]}",
                 hardware_tier_name=hardware_tier_name,
@@ -188,7 +285,8 @@ class DominoJobLauncher:
                     "rolling_window": rolling_window,
                 },
             )
-            response = domino.job_start(
+            response = self._job_start(
+                domino,
                 command=command,
                 title=f"AutoML EDA {request_id[:8]}",
                 hardware_tier_name=hardware_tier_name,
