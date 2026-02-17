@@ -128,7 +128,7 @@ class DominoJobLauncher:
         )
 
     @staticmethod
-    def _resolve_launch_commit_id() -> Optional[str]:
+    def _resolve_launch_commit_id() -> tuple[Optional[str], Optional[str]]:
         """Resolve commit used for child Domino jobs.
 
         Priority:
@@ -144,7 +144,7 @@ class DominoJobLauncher:
         ):
             value = os.environ.get(key)
             if value:
-                return value.strip()
+                return value.strip(), key
 
         try:
             result = subprocess.run(
@@ -154,9 +154,28 @@ class DominoJobLauncher:
                 text=True,
             )
             commit_id = result.stdout.strip()
-            return commit_id or None
+            return (commit_id, "git_head") if commit_id else (None, None)
         except Exception:
-            return None
+            return None, None
+
+    @staticmethod
+    def _is_commit_not_found_error(error: Exception) -> bool:
+        """Best-effort matcher for Domino commit-resolution failures."""
+        message = str(error).lower()
+        has_commit_hint = "commit" in message or "revision" in message
+        has_lookup_failure_hint = any(
+            hint in message
+            for hint in (
+                "not found",
+                "unknown",
+                "could not resolve",
+                "cannot resolve",
+                "invalid",
+                "does not exist",
+                "no such",
+            )
+        )
+        return has_commit_hint and has_lookup_failure_hint
 
     def _job_start(
         self,
@@ -174,10 +193,14 @@ class DominoJobLauncher:
             "hardware_tier_name": hardware_tier_name,
             "environment_id": environment_id,
         }
-        commit_id = self._resolve_launch_commit_id()
+        commit_id, commit_source = self._resolve_launch_commit_id()
         if commit_id:
             kwargs["commit_id"] = commit_id
-            logger.info("Launching Domino child job pinned to commit %s", commit_id[:12])
+            logger.info(
+                "Launching Domino child job pinned to commit %s (source=%s)",
+                commit_id[:12],
+                commit_source,
+            )
         else:
             logger.warning(
                 "No commit id resolved for Domino child job launch; "
@@ -190,6 +213,24 @@ class DominoJobLauncher:
             message = str(e)
             if kwargs.get("commit_id") and "commit_id" in message and "unexpected keyword argument" in message:
                 # Older python-domino versions may not expose commit_id.
+                kwargs.pop("commit_id", None)
+                return domino.job_start(**kwargs)
+            raise
+        except Exception as e:
+            pinned_commit = kwargs.get("commit_id")
+            # If git-derived HEAD cannot be resolved by Domino's repo mirror,
+            # fall back to project default instead of hard failing submission.
+            if (
+                pinned_commit
+                and commit_source == "git_head"
+                and self._is_commit_not_found_error(e)
+            ):
+                logger.warning(
+                    "Domino could not resolve git-derived commit %s (%s). "
+                    "Retrying launch without commit pin.",
+                    str(pinned_commit)[:12],
+                    e,
+                )
                 kwargs.pop("commit_id", None)
                 return domino.job_start(**kwargs)
             raise
