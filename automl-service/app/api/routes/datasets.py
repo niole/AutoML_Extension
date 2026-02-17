@@ -32,7 +32,7 @@ router = APIRouter()
 async def list_datasets(
     dataset_manager=Depends(get_dataset_manager),
 ):
-    """List available Domino datasets from /domino/datasets/local/ only."""
+    """List available datasets from the active runtime dataset mount path."""
     return await list_datasets_response(dataset_manager)
 
 

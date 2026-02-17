@@ -3,7 +3,6 @@ import Button from '../common/Button'
 import type {
   AdvancedAutoGluonConfig,
   TimeSeriesAdvancedConfig,
-  MultimodalAdvancedConfig,
   ModelType,
 } from '../../types/job'
 import { ResourceConfig } from './config/ResourceConfig'
@@ -15,17 +14,14 @@ import { ImbalanceConfig } from './config/ImbalanceConfig'
 import { FoundationModelConfig } from './config/FoundationModelConfig'
 import { AdvancedTabularConfig } from './config/AdvancedTabularConfig'
 import { TimeSeriesSpecificConfig } from './config/TimeSeriesSpecificConfig'
-import { MultimodalSpecificConfig } from './config/MultimodalSpecificConfig'
 import { getConfiguredCount } from './config/getConfiguredCount'
 
 interface AdvancedConfigPanelProps {
   modelType: ModelType
   advancedConfig: AdvancedAutoGluonConfig
   timeseriesConfig?: TimeSeriesAdvancedConfig
-  multimodalConfig?: MultimodalAdvancedConfig
   onAdvancedConfigChange: (config: AdvancedAutoGluonConfig) => void
   onTimeseriesConfigChange?: (config: TimeSeriesAdvancedConfig) => void
-  onMultimodalConfigChange?: (config: MultimodalAdvancedConfig) => void
 }
 
 type SectionId = 'resources' | 'models' | 'training' | 'hpo' | 'threshold' | 'imbalance' | 'foundation' | 'advanced' | 'specific'
@@ -37,10 +33,8 @@ export function AdvancedConfigPanel({
   modelType,
   advancedConfig,
   timeseriesConfig,
-  multimodalConfig,
   onAdvancedConfigChange,
   onTimeseriesConfigChange,
-  onMultimodalConfigChange,
 }: AdvancedConfigPanelProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [activeSection, setActiveSection] = useState<SectionId>('resources')
@@ -58,11 +52,8 @@ export function AdvancedConfigPanel({
   const updateTimeseries = (key: keyof TimeSeriesAdvancedConfig, value: unknown) => {
     if (onTimeseriesConfigChange && timeseriesConfig) onTimeseriesConfigChange({ ...timeseriesConfig, [key]: value })
   }
-  const updateMultimodal = (key: keyof MultimodalAdvancedConfig, value: unknown) => {
-    if (onMultimodalConfigChange && multimodalConfig) onMultimodalConfigChange({ ...multimodalConfig, [key]: value })
-  }
 
-  const configuredCount = getConfiguredCount(modelType, advancedConfig, timeseriesConfig, multimodalConfig)
+  const configuredCount = getConfiguredCount(modelType, advancedConfig, timeseriesConfig)
 
   const tabs: { id: SectionId; label: string }[] = [
     { id: 'resources', label: 'Resources' },
@@ -75,9 +66,7 @@ export function AdvancedConfigPanel({
       { id: 'foundation' as SectionId, label: 'Foundation' },
       { id: 'advanced' as SectionId, label: 'Advanced' },
     ] : []),
-    ...((modelType === 'timeseries' || modelType === 'multimodal') ? [
-      { id: 'specific' as SectionId, label: modelType === 'timeseries' ? 'Time Series' : 'Multimodal' },
-    ] : []),
+    ...(modelType === 'timeseries' ? [{ id: 'specific' as SectionId, label: 'Time Series' }] : []),
   ]
 
   const renderSection = () => {
@@ -100,7 +89,6 @@ export function AdvancedConfigPanel({
         return modelType === 'tabular' ? <AdvancedTabularConfig config={advancedConfig} onChange={updateAdvanced} /> : null
       case 'specific':
         if (modelType === 'timeseries' && timeseriesConfig) return <TimeSeriesSpecificConfig config={timeseriesConfig} onChange={updateTimeseries} />
-        if (modelType === 'multimodal' && multimodalConfig) return <MultimodalSpecificConfig config={multimodalConfig} onChange={updateMultimodal} />
         return null
       default:
         return null

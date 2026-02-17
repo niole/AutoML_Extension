@@ -7,6 +7,7 @@ import { DashboardFilters } from '../components/dashboard/DashboardFilters'
 import { EmptyState } from '../components/dashboard/EmptyState'
 import { JobTableView } from '../components/dashboard/JobTableView'
 import { JobCardView } from '../components/dashboard/JobCardView'
+import { StorageCleanupDialog } from '../components/dashboard/StorageCleanupDialog'
 
 type ViewMode = 'table' | 'card'
 
@@ -16,6 +17,7 @@ function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [deleteConfirmJob, setDeleteConfirmJob] = useState<Job | null>(null)
+  const [storageCleanupOpen, setStorageCleanupOpen] = useState(false)
 
   const { data, isLoading, error } = useJobs({ limit: 100 })
   const deleteJobMutation = useDeleteJob()
@@ -66,6 +68,7 @@ function Dashboard() {
         onTypeFilterChange={setTypeFilter}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        onStorageCleanupClick={() => setStorageCleanupOpen(true)}
       />
 
       {/* Content */}
@@ -106,6 +109,11 @@ function Dashboard() {
           </button>
         </div>
       )}
+
+      <StorageCleanupDialog
+        isOpen={storageCleanupOpen}
+        onClose={() => setStorageCleanupOpen(false)}
+      />
     </div>
   )
 }

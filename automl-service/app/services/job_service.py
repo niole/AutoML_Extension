@@ -75,8 +75,6 @@ def build_autogluon_config(job_request: JobCreateRequest) -> Optional[dict]:
         autogluon_config["advanced"] = job_request.advanced_config.model_dump(exclude_none=True)
     if job_request.timeseries_config:
         autogluon_config["timeseries"] = job_request.timeseries_config.model_dump(exclude_none=True)
-    if job_request.multimodal_config:
-        autogluon_config["multimodal"] = job_request.multimodal_config.model_dump(exclude_none=True)
     if job_request.feature_columns:
         autogluon_config["feature_columns"] = job_request.feature_columns
     return autogluon_config or None

@@ -409,7 +409,7 @@ export function RegisterModelDialog({ jobId, modelPath, onClose, onSuccess }: Re
       <div className="bg-white max-w-md w-full mx-4 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
-          <h3 className="text-xl font-semibold text-domino-text-primary">Deploy to Model Registry</h3>
+          <h3 className="text-xl font-semibold text-domino-text-primary">Register in Domino Model Registry</h3>
           <button onClick={onClose} className="text-domino-text-muted hover:text-domino-text-primary transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -424,9 +424,9 @@ export function RegisterModelDialog({ jobId, modelPath, onClose, onSuccess }: Re
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-lg font-medium text-domino-text-primary">Model Registered Successfully!</p>
+            <p className="text-lg font-medium text-domino-text-primary">Model Registered Successfully</p>
             <p className="text-sm text-domino-text-secondary mt-1">
-              {modelName} has been added to the registry.
+              {modelName} has been added to Domino Model Registry.
             </p>
           </div>
         ) : (
@@ -450,7 +450,6 @@ export function RegisterModelDialog({ jobId, modelPath, onClose, onSuccess }: Re
                   options={[
                     { value: 'tabular', label: 'Tabular' },
                     { value: 'timeseries', label: 'Time Series' },
-                    { value: 'multimodal', label: 'Multimodal' },
                   ]}
                 />
               </div>

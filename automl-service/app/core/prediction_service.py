@@ -83,20 +83,8 @@ class PredictionService:
             predictions = predictor.predict(df)
             result["predictions"] = predictions.to_dict(orient="records")
             result["prediction_length"] = predictor.prediction_length
-
-        elif model_type == "multimodal":
-            predictions = predictor.predict(df)
-            result["predictions"] = predictions.tolist() if hasattr(predictions, 'tolist') else list(predictions)
-
-            if return_probabilities:
-                try:
-                    probas = predictor.predict_proba(df)
-                    if isinstance(probas, pd.DataFrame):
-                        result["probabilities"] = probas.to_dict(orient="records")
-                    elif hasattr(probas, 'tolist'):
-                        result["probabilities"] = probas.tolist()
-                except Exception as e:
-                    logger.warning(f"Could not get probabilities: {e}")
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
 
         return result
 
@@ -213,11 +201,8 @@ class PredictionService:
                 "target": predictor.target,
                 "leaderboard": predictor.leaderboard().to_dict(orient="records"),
             })
-        elif model_type == "multimodal":
-            info.update({
-                "problem_type": getattr(predictor, 'problem_type', None),
-                "label": getattr(predictor, 'label', None),
-            })
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
 
         return info
 

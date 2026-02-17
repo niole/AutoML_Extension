@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { Link } from 'react-router-dom'
 import Badge from '../common/Badge'
 import type { Job, JobStatus } from '../../types/job'
 import { formatDuration } from '../../utils/formatters'
@@ -10,6 +11,10 @@ interface JobOverviewTabProps {
 }
 
 export function JobOverviewTab({ job, isLoading, currentStatus }: JobOverviewTabProps) {
+  const datasetLabel = getDatasetLabel(job, isLoading)
+  const datasetLink = getDatasetLink(job)
+  const datasetDetails = job?.file_path || job?.dataset_id || ''
+
   return (
     <div>
       {/* Description */}
@@ -34,6 +39,19 @@ export function JobOverviewTab({ job, isLoading, currentStatus }: JobOverviewTab
             <MetadataRow label="Model type" value={job?.model_type || (isLoading ? 'Loading...' : '\u2014')} capitalize />
             {job?.problem_type && <MetadataRow label="Problem type" value={job.problem_type} capitalize />}
             <MetadataRow label="Target column" value={job?.target_column || (isLoading ? 'Loading...' : '\u2014')} />
+            <MetadataRow label="Dataset used">
+              {datasetLink ? (
+                <Link
+                  to={datasetLink}
+                  className="text-domino-accent-purple hover:underline break-all"
+                  title={datasetDetails}
+                >
+                  {datasetLabel}
+                </Link>
+              ) : (
+                datasetLabel
+              )}
+            </MetadataRow>
             <MetadataRow label="Preset" value={job?.preset?.replace(/_/g, ' ') || (isLoading ? 'Loading...' : '\u2014')} capitalize />
             {job?.eval_metric && <MetadataRow label="Eval metric" value={job.eval_metric} />}
             {job?.time_limit && <MetadataRow label="Time limit" value={`${job.time_limit}s`} />}
@@ -143,4 +161,26 @@ function MetadataRow({
       </td>
     </tr>
   )
+}
+
+function getDatasetLabel(job: Job | undefined, isLoading: boolean): string {
+  if (!job) return isLoading ? 'Loading...' : '\u2014'
+  if (job.file_path) return getFileName(job.file_path)
+  if (job.dataset_id) return job.dataset_id.replace(/^domino:/, '')
+  return '\u2014'
+}
+
+function getDatasetLink(job: Job | undefined): string | null {
+  if (!job) return null
+  const params = new URLSearchParams()
+  if (job.data_source) params.set('data_source', job.data_source)
+  if (job.dataset_id) params.set('dataset_id', job.dataset_id)
+  if (job.file_path) params.set('file_path', job.file_path)
+  const query = params.toString()
+  return query ? `/eda?${query}` : null
+}
+
+function getFileName(path: string): string {
+  const segments = path.split('/')
+  return segments[segments.length - 1] || path
 }

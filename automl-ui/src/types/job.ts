@@ -1,5 +1,5 @@
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-export type ModelType = 'tabular' | 'timeseries' | 'multimodal'
+export type ModelType = 'tabular' | 'timeseries'
 export type ProblemType = 'binary' | 'multiclass' | 'regression' | 'quantile'
 export type ExecutionTarget = 'local' | 'domino_job'
 export type Preset =
@@ -128,20 +128,6 @@ export interface TimeSeriesAdvancedConfig {
   chronos_model_size?: 'tiny' | 'mini' | 'small' | 'base' | 'large'
 }
 
-export interface MultimodalAdvancedConfig {
-  text_backbone?: string
-  text_max_length?: number
-  image_backbone?: string
-  image_size?: number
-  learning_rate?: number
-  batch_size?: number
-  max_epochs?: number
-  warmup_steps?: number
-  weight_decay?: number
-  gradient_clip_val?: number
-  fusion_method?: 'late' | 'early'
-}
-
 export interface Job {
   id: string
   name: string
@@ -174,7 +160,6 @@ export interface Job {
   error_message?: string
   advanced_config?: AdvancedAutoGluonConfig
   timeseries_config?: TimeSeriesAdvancedConfig
-  multimodal_config?: MultimodalAdvancedConfig
   is_registered?: boolean
   registered_model_name?: string
   registered_model_version?: string
@@ -206,7 +191,6 @@ export interface JobCreateRequest {
   experiment_name?: string
   advanced_config?: AdvancedAutoGluonConfig
   timeseries_config?: TimeSeriesAdvancedConfig
-  multimodal_config?: MultimodalAdvancedConfig
   auto_register?: boolean
   register_name?: string
 }

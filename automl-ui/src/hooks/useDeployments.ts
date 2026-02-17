@@ -136,8 +136,12 @@ export function useDeployments(): UseDeploymentsResult {
   const deployFromJobOp = useAsyncOperation(
     async (request: DeployFromJobRequest, refreshFn: () => Promise<Deployment[]>) => {
       const { data } = await api.post<DeploymentResponse>('deployfromjob', request)
-      // Refresh deployments list
-      await refreshFn()
+      // Best-effort refresh to avoid masking a successful deployment with a list error.
+      try {
+        await refreshFn()
+      } catch (refreshError) {
+        console.warn('Deployment succeeded but failed to refresh deployment list:', refreshError)
+      }
       return data
     },
     { errorMessage: 'Failed to deploy from job' }

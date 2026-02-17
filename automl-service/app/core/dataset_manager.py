@@ -15,6 +15,8 @@ from app.api.schemas.dataset import (
 )
 
 logger = logging.getLogger(__name__)
+DEFAULT_DOMINO_DATASET_ROOT = "/domino/datasets/local"
+DATASET_MOUNT_PATH_ENV = "DOMINO_DATASET_MOUNT_PATH"
 
 
 class DominoDatasetManager:
@@ -47,6 +49,15 @@ class DominoDatasetManager:
             self._http_client = httpx.AsyncClient(timeout=30.0)
         return self._http_client
 
+    def _resolve_dataset_mount_path(self) -> str:
+        """Resolve the filesystem path used for mounted datasets."""
+        env_path = os.environ.get(DATASET_MOUNT_PATH_ENV)
+        if env_path:
+            return env_path
+        if os.path.exists(DEFAULT_DOMINO_DATASET_ROOT):
+            return DEFAULT_DOMINO_DATASET_ROOT
+        return self.settings.datasets_path
+
     async def _api_request(self, method: str, endpoint: str, **kwargs) -> dict:
         """Make a request to the Domino API."""
         client = await self._get_client()
@@ -70,23 +81,20 @@ class DominoDatasetManager:
         return response.json() if response.text else {}
 
     async def list_datasets(self) -> list[DatasetResponse]:
-        """List available datasets from /domino/datasets/local/ only."""
-        # Only list datasets from /domino/datasets/local/ - this is the only
-        # location we support for training data
+        """List datasets from the active runtime dataset mount path."""
         datasets = await self._list_local_datasets()
-        logger.info(f"Found {len(datasets)} datasets in /domino/datasets/local/")
+        logger.info(f"Found {len(datasets)} datasets in {self._resolve_dataset_mount_path()}")
         return datasets
 
     async def _list_local_datasets(self) -> list[DatasetResponse]:
-        """List datasets from /domino/datasets/local/ directory only."""
+        """List datasets from the active runtime dataset mount directory."""
         datasets = []
-        # Only scan /domino/datasets/local/ - this is where Domino mounts datasets
-        domino_dataset_path = "/domino/datasets/local"
+        dataset_mount_path = self._resolve_dataset_mount_path()
 
-        if os.path.exists(domino_dataset_path):
+        if os.path.exists(dataset_mount_path):
             # List subdirectories (each is a mounted dataset)
-            for item in os.listdir(domino_dataset_path):
-                item_path = os.path.join(domino_dataset_path, item)
+            for item in os.listdir(dataset_mount_path):
+                item_path = os.path.join(dataset_mount_path, item)
                 if os.path.isdir(item_path):
                     # This is a dataset directory - find files inside
                     files = []
@@ -116,7 +124,7 @@ class DominoDatasetManager:
                             )
                         )
                 elif os.path.isfile(item_path) and item.endswith((".csv", ".parquet", ".pq")):
-                    # File directly in /domino/datasets/local/
+                    # File directly in dataset mount root
                     stat = os.stat(item_path)
                     datasets.append(
                         DatasetResponse(
@@ -129,7 +137,7 @@ class DominoDatasetManager:
                         )
                     )
 
-        logger.info(f"Found {len(datasets)} datasets in /domino/datasets/local/")
+        logger.info(f"Found {len(datasets)} datasets in {dataset_mount_path}")
         return datasets
 
     async def get_dataset(self, dataset_id: str) -> Optional[DatasetResponse]:
@@ -185,9 +193,9 @@ class DominoDatasetManager:
             return os.path.join(self.settings.datasets_path, file_name)
 
         if dataset_id.startswith("domino:"):
-            # Domino dataset from /domino/datasets/local/
+            # Domino dataset from mounted dataset root
             dataset_name = dataset_id.replace("domino:", "")
-            dataset_path = f"/domino/datasets/local/{dataset_name}"
+            dataset_path = os.path.join(self._resolve_dataset_mount_path(), dataset_name)
             if file_name:
                 return os.path.join(dataset_path, file_name)
             # Check if it's a file directly
@@ -201,10 +209,10 @@ class DominoDatasetManager:
                             return os.path.join(root, f)
             raise FileNotFoundError(f"No data files found in dataset: {dataset_id}")
 
-        # For other Domino datasets, files are mounted at /domino/datasets/local/{dataset_name}
+        # For other Domino datasets, files are mounted under the dataset root
         dataset = await self.get_dataset(dataset_id)
         if dataset:
-            dataset_path = f"/domino/datasets/local/{dataset.name}"
+            dataset_path = os.path.join(self._resolve_dataset_mount_path(), dataset.name)
             if file_name:
                 return os.path.join(dataset_path, file_name)
             elif dataset.files:

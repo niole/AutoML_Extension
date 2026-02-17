@@ -12,7 +12,7 @@ class TrainingProgressCallback:
     """Callback for tracking training progress.
 
     This is the single, canonical implementation used by TabularTrainer,
-    TimeSeriesTrainer, MultimodalTrainer, and AutoGluonRunner.
+    TimeSeriesTrainer, and AutoGluonRunner.
 
     Basic usage (trainers):
         progress = TrainingProgressCallback(job_id, log_callback)

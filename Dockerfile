@@ -145,29 +145,6 @@ RUN pip install \
     "tqdm>=4.65.0" 
 
 # ============================================
-# AutoGluon Multimodal Dependencies
-# ============================================
-RUN pip install \
-    "transformers>=4.35.0" \
-    "datasets>=2.14.0" \
-    "tokenizers>=0.14.0" \
-    "accelerate>=0.24.0" \
-    "timm>=0.9.0" \
-    "Pillow>=10.0.0" \
-    "opencv-python-headless>=4.8.0" \
-    "albumentations>=1.3.1" \
-    "sentencepiece>=0.1.99" \
-    "sacremoses>=0.0.53" \
-    "nltk>=3.8.1" \
-    "pdf2image>=1.16.3" \
-    "pytesseract>=0.3.10" \
-    "torchmetrics>=1.2.0" \
-    "omegaconf>=2.3.0" \
-    "jsonschema>=4.19.0" \
-    "nptyping>=2.5.0" \
-    "defusedxml>=0.7.1"
-
-# ============================================
 # AutoGluon Installation (All Modules)
 # ============================================
 RUN pip install \
@@ -175,8 +152,7 @@ RUN pip install \
     "autogluon.core>=1.1.0" \
     "autogluon.features>=1.1.0" \
     "autogluon.tabular>=1.1.0" \
-    "autogluon.timeseries>=1.1.0" \
-    "autogluon.multimodal>=1.1.0"
+    "autogluon.timeseries>=1.1.0"
 
 # ============================================
 # MLflow for Experiment Tracking
@@ -287,8 +263,7 @@ RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('s
 
 # Verify AutoGluon installation
 RUN python -c "from autogluon.tabular import TabularPredictor; print('TabularPredictor: OK')" \
-    && python -c "from autogluon.timeseries import TimeSeriesPredictor; print('TimeSeriesPredictor: OK')" \
-    && python -c "from autogluon.multimodal import MultiModalPredictor; print('MultiModalPredictor: OK')"
+    && python -c "from autogluon.timeseries import TimeSeriesPredictor; print('TimeSeriesPredictor: OK')"
 
 # ============================================
 # Domino Agents SDK and MLflow Update
@@ -297,4 +272,3 @@ USER root
 
 RUN pip install mlflow==3.2.0
 RUN pip install "dominodatalab[agents] @ git+https://github.com/dominodatalab/python-domino.git@release-2.0.0"
-

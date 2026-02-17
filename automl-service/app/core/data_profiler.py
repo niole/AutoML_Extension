@@ -413,12 +413,12 @@ class DataProfiler:
                 "priority": "info"
             })
 
-        # Check for text columns (potential multimodal)
+        # Check for text columns
         text_cols = [c for c in profile["columns"] if c.get("semantic_type") == "text"]
         if text_cols:
             recommendations.append({
                 "type": "model",
-                "message": f"Text columns detected - consider Multimodal model: {', '.join(c['name'] for c in text_cols[:3])}",
+                "message": f"Text columns detected - tabular models can use text features: {', '.join(c['name'] for c in text_cols[:3])}",
                 "priority": "info"
             })
 

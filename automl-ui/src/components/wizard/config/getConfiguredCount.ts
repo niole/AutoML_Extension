@@ -1,7 +1,6 @@
 import type {
   AdvancedAutoGluonConfig,
   TimeSeriesAdvancedConfig,
-  MultimodalAdvancedConfig,
   ModelType,
 } from '../../../types/job'
 
@@ -9,7 +8,6 @@ export function getConfiguredCount(
   modelType: ModelType,
   advancedConfig: AdvancedAutoGluonConfig,
   timeseriesConfig?: TimeSeriesAdvancedConfig,
-  multimodalConfig?: MultimodalAdvancedConfig,
 ): number {
   const commonSettings = [
     advancedConfig.num_gpus !== undefined && advancedConfig.num_gpus !== 0,
@@ -39,12 +37,5 @@ export function getConfiguredCount(
     timeseriesConfig.use_chronos,
     timeseriesConfig.enable_ensemble === false,
   ] : []
-  const multimodalSettings = modelType === 'multimodal' && multimodalConfig ? [
-    multimodalConfig.text_backbone !== undefined,
-    multimodalConfig.image_backbone !== undefined,
-    multimodalConfig.learning_rate !== undefined,
-    multimodalConfig.batch_size !== undefined,
-    multimodalConfig.max_epochs !== undefined,
-  ] : []
-  return [...commonSettings, ...tabularSettings, ...timeseriesSettings, ...multimodalSettings].filter(Boolean).length
+  return [...commonSettings, ...tabularSettings, ...timeseriesSettings].filter(Boolean).length
 }

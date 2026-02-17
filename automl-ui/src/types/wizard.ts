@@ -1,4 +1,4 @@
-import { ModelType, ProblemType, Preset, ExecutionTarget, AdvancedAutoGluonConfig, TimeSeriesAdvancedConfig, MultimodalAdvancedConfig } from './job'
+import { ModelType, ProblemType, Preset, ExecutionTarget, AdvancedAutoGluonConfig, TimeSeriesAdvancedConfig } from './job'
 
 export interface DataSourceConfig {
   type: 'upload' | 'domino_dataset'
@@ -26,7 +26,6 @@ export interface TrainingConfig {
   experimentName?: string
   advancedConfig?: AdvancedAutoGluonConfig
   timeseriesConfig?: TimeSeriesAdvancedConfig
-  multimodalConfig?: MultimodalAdvancedConfig
 }
 
 export interface WizardState {

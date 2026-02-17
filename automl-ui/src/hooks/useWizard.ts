@@ -78,7 +78,6 @@ export function useWizard() {
       experiment_name: wizard.training.experimentName,
       advanced_config: wizard.training.advancedConfig,
       timeseries_config: wizard.training.timeseriesConfig,
-      multimodal_config: wizard.training.multimodalConfig,
     }
 
     const job = await createJobMutation.mutateAsync(request)

@@ -164,7 +164,7 @@ async def list_jobs_post(
 
     Supports filtering by:
     - status: Filter by job status (pending, running, completed, failed, cancelled)
-    - model_type: Filter by model type (tabular, timeseries, multimodal)
+    - model_type: Filter by model type (tabular, timeseries)
     - owner: Filter by owner username. If not provided, uses current user from domino-username header.
              Pass owner="" (empty string) to see all users' jobs.
     - project_name: Filter by project name. Pass project_name="" to see jobs from all projects.

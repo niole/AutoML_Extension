@@ -576,3 +576,514 @@ def generate_binary_classification_notebook(job) -> Dict[str, Any]:
     }
 
     return notebook
+
+
+def _resolve_data_path(job) -> str:
+    """Resolve a usable notebook data path from job metadata."""
+    if getattr(job, "file_path", None):
+        return job.file_path
+    if getattr(job, "dataset_id", None):
+        return f"/mnt/data/{job.dataset_id}"
+    return "path/to/your/data.csv"
+
+
+def _normalize_timeseries_preset(raw_preset: str) -> str:
+    """Map generic presets to valid TimeSeriesPredictor presets."""
+    ts_preset_map = {
+        "medium_quality_faster_train": "medium_quality",
+        "good_quality": "medium_quality",
+        "optimize_for_deployment": "fast_training",
+    }
+    return ts_preset_map.get(raw_preset, raw_preset)
+
+
+def _normalize_tabular_problem_type(job) -> str:
+    """Normalize job problem_type to a string for notebook config."""
+    if not getattr(job, "problem_type", None):
+        return "auto"
+    if hasattr(job.problem_type, "value"):
+        return str(job.problem_type.value)
+    return str(job.problem_type)
+
+
+def generate_tabular_notebook(job) -> Dict[str, Any]:
+    """Generate a notebook for any tabular problem type."""
+    cells = []
+
+    problem_type = _normalize_tabular_problem_type(job)
+    data_path = _resolve_data_path(job)
+    model_save_path = f"./AutogluonModels/{job.name.replace(' ', '_')}_tabular"
+    advanced_config = {}
+    if isinstance(job.autogluon_config, dict):
+        advanced_config = job.autogluon_config.get("advanced", {}) or {}
+
+    cells.append(make_cell("markdown", [
+        f"# AutoML Tabular: {job.name}\n",
+        "\n",
+        f"**Description:** {job.description or 'Tabular model training'}\n",
+        "\n",
+        "This notebook was generated from the AutoML UI configuration.\n",
+        "\n",
+        "## Contents\n",
+        "1. Setup and Imports\n",
+        "2. Configuration\n",
+        "3. Load Data\n",
+        "4. Train Model\n",
+        "5. Evaluate Model\n",
+        "6. MLflow Experiment Tracking\n",
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 1. Setup and Imports"
+    ]))
+
+    cells.append(make_cell("code", [
+        "import pandas as pd\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "\n",
+        "from autogluon.tabular import TabularPredictor\n",
+        "import mlflow\n",
+        "\n",
+        "pd.set_option('display.max_columns', None)\n",
+        "pd.set_option('display.max_rows', 100)\n",
+        "\n",
+        "print(f\"AutoGluon version: {__import__('autogluon').__version__}\")\n",
+        "print(f\"MLflow version: {mlflow.__version__}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 2. Configuration\n",
+        "\n",
+        "These parameters were configured in the AutoML UI:"
+    ]))
+
+    config_lines = [
+        "CONFIG = {\n",
+        f"    'job_name': {repr(job.name)},\n",
+        f"    'target_column': {repr(job.target_column)},\n",
+        f"    'problem_type': {repr(problem_type)},\n",
+        f"    'preset': {repr(str(job.preset.value) if hasattr(job.preset, 'value') else str(job.preset))},\n",
+        f"    'time_limit': {job.time_limit or 3600},\n",
+        f"    'eval_metric': {repr(job.eval_metric or '')},\n",
+        "}\n",
+        "\n",
+        f"ADVANCED_CONFIG = {repr(advanced_config)}\n",
+        f"DATA_PATH = {repr(data_path)}\n",
+        f"MODEL_SAVE_PATH = {repr(model_save_path)}\n",
+    ]
+    cells.append(make_cell("code", config_lines))
+
+    cells.append(make_cell("markdown", [
+        "## 3. Load Data"
+    ]))
+
+    cells.append(make_cell("code", [
+        "df = pd.read_csv(DATA_PATH)\n",
+        "print(f\"Dataset shape: {df.shape}\")\n",
+        "df.head()"
+    ]))
+
+    cells.append(make_cell("code", [
+        "stratify_col = df[CONFIG['target_column']] if CONFIG['problem_type'] in {'binary', 'multiclass'} else None\n",
+        "train_df, test_df = train_test_split(\n",
+        "    df,\n",
+        "    test_size=0.2,\n",
+        "    random_state=42,\n",
+        "    stratify=stratify_col,\n",
+        ")\n",
+        "print(f\"Training samples: {len(train_df)}\")\n",
+        "print(f\"Test samples: {len(test_df)}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 4. Train Model"
+    ]))
+
+    cells.append(make_cell("code", [
+        "predictor_kwargs = {\n",
+        "    'label': CONFIG['target_column'],\n",
+        "    'path': MODEL_SAVE_PATH,\n",
+        "}\n",
+        "if CONFIG.get('eval_metric'):\n",
+        "    predictor_kwargs['eval_metric'] = CONFIG['eval_metric']\n",
+        "if CONFIG.get('problem_type') and CONFIG['problem_type'] != 'auto':\n",
+        "    predictor_kwargs['problem_type'] = CONFIG['problem_type']\n",
+        "\n",
+        "predictor = TabularPredictor(**predictor_kwargs)\n",
+        "\n",
+        "fit_kwargs = {\n",
+        "    'train_data': train_df,\n",
+        "    'presets': CONFIG['preset'],\n",
+        "    'time_limit': CONFIG['time_limit'],\n",
+        "}\n",
+        "if ADVANCED_CONFIG.get('num_bag_folds'):\n",
+        "    fit_kwargs['num_bag_folds'] = ADVANCED_CONFIG['num_bag_folds']\n",
+        "if ADVANCED_CONFIG.get('num_stack_levels'):\n",
+        "    fit_kwargs['num_stack_levels'] = ADVANCED_CONFIG['num_stack_levels']\n",
+        "if ADVANCED_CONFIG.get('auto_stack'):\n",
+        "    fit_kwargs['auto_stack'] = ADVANCED_CONFIG['auto_stack']\n",
+        "if ADVANCED_CONFIG.get('excluded_model_types'):\n",
+        "    fit_kwargs['excluded_model_types'] = ADVANCED_CONFIG['excluded_model_types']\n",
+        "if ADVANCED_CONFIG.get('num_gpus'):\n",
+        "    fit_kwargs['num_gpus'] = ADVANCED_CONFIG['num_gpus']\n",
+        "\n",
+        "predictor.fit(**fit_kwargs)\n",
+        "print(f\"Training complete. Best model: {predictor.model_best}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 5. Evaluate Model"
+    ]))
+
+    cells.append(make_cell("code", [
+        "leaderboard = predictor.leaderboard(test_df, silent=True)\n",
+        "leaderboard"
+    ]))
+
+    cells.append(make_cell("code", [
+        "metrics = predictor.evaluate(test_df, silent=True)\n",
+        "print('Evaluation metrics:')\n",
+        "for metric_name, metric_value in metrics.items():\n",
+        "    print(f\"{metric_name}: {metric_value}\")\n",
+        "metrics"
+    ]))
+
+    cells.append(make_cell("code", [
+        "try:\n",
+        "    feature_importance = predictor.feature_importance(test_df)\n",
+        "    feature_importance.head(20)\n",
+        "except Exception as e:\n",
+        "    print(f\"Feature importance unavailable: {e}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 6. MLflow Experiment Tracking\n",
+        "\n",
+        "Log training metadata and evaluation metrics to MLflow."
+    ]))
+
+    experiment_name = job.experiment_name or job.name.replace(" ", "_")
+
+    cells.append(make_cell("code", [
+        f"EXPERIMENT_NAME = {repr(experiment_name)}\n",
+        "\n",
+        "mlflow.set_experiment(EXPERIMENT_NAME)\n",
+        "\n",
+        "with mlflow.start_run(run_name=CONFIG['job_name']) as run:\n",
+        "    mlflow.log_param('model_type', 'tabular')\n",
+        "    mlflow.log_param('target_column', CONFIG['target_column'])\n",
+        "    mlflow.log_param('problem_type', CONFIG['problem_type'])\n",
+        "    mlflow.log_param('preset', CONFIG['preset'])\n",
+        "    mlflow.log_param('time_limit', CONFIG['time_limit'])\n",
+        "    mlflow.log_param('best_model', predictor.model_best)\n",
+        "\n",
+        "    for metric_name, metric_value in metrics.items():\n",
+        "        if isinstance(metric_value, (int, float)):\n",
+        "            mlflow.log_metric(metric_name, metric_value)\n",
+        "\n",
+        "    mlflow.set_tag('source', 'automl-notebook')\n",
+        "    mlflow.set_tag('framework', 'autogluon')\n",
+        "\n",
+        "    leaderboard.to_csv('leaderboard.csv', index=False)\n",
+        "    mlflow.log_artifact('leaderboard.csv')\n",
+        "\n",
+        "    print(f\"Logged to MLflow run: {run.info.run_id}\")\n",
+        "    print(f\"Experiment: {EXPERIMENT_NAME}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## Summary\n",
+        "\n",
+        "This notebook has:\n",
+        "1. Loaded the tabular dataset\n",
+        "2. Trained an AutoGluon TabularPredictor\n",
+        "3. Evaluated model performance using a holdout test split\n",
+        "4. Logged metadata and metrics to MLflow\n",
+    ]))
+
+    notebook = {
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3"
+            },
+            "language_info": {
+                "name": "python",
+                "version": "3.10.0"
+            },
+            "generated_by": "AutoML UI",
+            "job_id": job.id,
+            "job_name": job.name,
+            "model_type": "tabular",
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "cells": cells
+    }
+
+    return notebook
+
+
+def generate_timeseries_notebook(job) -> Dict[str, Any]:
+    """Generate a Jupyter notebook for time series training."""
+    cells = []
+
+    raw_preset = job.preset.value if hasattr(job.preset, "value") else str(job.preset)
+    preset = _normalize_timeseries_preset(raw_preset)
+    data_path = _resolve_data_path(job)
+    model_save_path = f"./AutogluonModels/{job.name.replace(' ', '_')}_timeseries"
+    timeseries_config = {}
+    if isinstance(job.autogluon_config, dict):
+        timeseries_config = job.autogluon_config.get("timeseries", {}) or {}
+
+    cells.append(make_cell("markdown", [
+        f"# AutoML Time Series: {job.name}\n",
+        "\n",
+        f"**Description:** {job.description or 'Time series forecasting model training'}\n",
+        "\n",
+        "This notebook was generated from the AutoML UI configuration.\n",
+        "\n",
+        "## Contents\n",
+        "1. Setup and Imports\n",
+        "2. Configuration\n",
+        "3. Load and Prepare Data\n",
+        "4. Train Model\n",
+        "5. Evaluate and Forecast\n",
+        "6. MLflow Experiment Tracking\n",
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 1. Setup and Imports"
+    ]))
+
+    cells.append(make_cell("code", [
+        "import os\n",
+        "import pandas as pd\n",
+        "import matplotlib.pyplot as plt\n",
+        "\n",
+        "from autogluon.timeseries import TimeSeriesPredictor, TimeSeriesDataFrame\n",
+        "import mlflow\n",
+        "\n",
+        "pd.set_option('display.max_columns', None)\n",
+        "pd.set_option('display.max_rows', 100)\n",
+        "\n",
+        "print(f\"AutoGluon version: {__import__('autogluon').__version__}\")\n",
+        "print(f\"MLflow version: {mlflow.__version__}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 2. Configuration\n",
+        "\n",
+        "These parameters were configured in the AutoML UI:"
+    ]))
+
+    config_lines = [
+        "# Training Configuration\n",
+        "CONFIG = {\n",
+        f"    'job_name': {repr(job.name)},\n",
+        f"    'target_column': {repr(job.target_column)},\n",
+        f"    'time_column': {repr(job.time_column)},\n",
+        f"    'id_column': {repr(job.id_column)},\n",
+        f"    'prediction_length': {job.prediction_length or 1},\n",
+        f"    'preset': {repr(preset)},\n",
+        f"    'time_limit': {job.time_limit or 3600},\n",
+        f"    'eval_metric': {repr(job.eval_metric or '')},\n",
+        "}\n",
+        "\n",
+        f"TS_CONFIG = {repr(timeseries_config)}\n",
+        f"DATA_PATH = {repr(data_path)}\n",
+        f"MODEL_SAVE_PATH = {repr(model_save_path)}\n",
+    ]
+    cells.append(make_cell("code", config_lines))
+
+    cells.append(make_cell("markdown", [
+        "## 3. Load and Prepare Data"
+    ]))
+
+    cells.append(make_cell("code", [
+        "df = pd.read_csv(DATA_PATH)\n",
+        "df[CONFIG['time_column']] = pd.to_datetime(df[CONFIG['time_column']])\n",
+        "df = df.sort_values(CONFIG['time_column']).reset_index(drop=True)\n",
+        "\n",
+        "if not CONFIG['id_column']:\n",
+        "    df['item_id'] = 'default'\n",
+        "    CONFIG['id_column'] = 'item_id'\n",
+        "\n",
+        "ts_df = TimeSeriesDataFrame.from_data_frame(\n",
+        "    df,\n",
+        "    id_column=CONFIG['id_column'],\n",
+        "    timestamp_column=CONFIG['time_column'],\n",
+        ")\n",
+        "\n",
+        "print(f\"Rows: {len(df):,}\")\n",
+        "print(f\"Series count: {ts_df.num_items}\")\n",
+        "print(f\"Time range: {df[CONFIG['time_column']].min()} -> {df[CONFIG['time_column']].max()}\")\n",
+        "ts_df.head()"
+    ]))
+
+    cells.append(make_cell("code", [
+        "train_ts, test_ts = ts_df.train_test_split(prediction_length=CONFIG['prediction_length'])\n",
+        "print(f\"Train rows: {len(train_ts):,}\")\n",
+        "print(f\"Test rows: {len(test_ts):,}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 4. Train Model"
+    ]))
+
+    cells.append(make_cell("code", [
+        "predictor_kwargs = {\n",
+        "    'target': CONFIG['target_column'],\n",
+        "    'prediction_length': CONFIG['prediction_length'],\n",
+        "    'path': MODEL_SAVE_PATH,\n",
+        "    'verbosity': 2,\n",
+        "}\n",
+        "\n",
+        "if CONFIG.get('eval_metric'):\n",
+        "    predictor_kwargs['eval_metric'] = CONFIG['eval_metric']\n",
+        "if TS_CONFIG.get('freq'):\n",
+        "    predictor_kwargs['freq'] = TS_CONFIG['freq']\n",
+        "if TS_CONFIG.get('quantile_levels'):\n",
+        "    predictor_kwargs['quantile_levels'] = TS_CONFIG['quantile_levels']\n",
+        "\n",
+        "predictor = TimeSeriesPredictor(**predictor_kwargs)\n",
+        "\n",
+        "fit_kwargs = {\n",
+        "    'train_data': train_ts,\n",
+        "    'presets': CONFIG['preset'],\n",
+        "}\n",
+        "if CONFIG.get('time_limit'):\n",
+        "    fit_kwargs['time_limit'] = CONFIG['time_limit']\n",
+        "if TS_CONFIG.get('known_covariates_names'):\n",
+        "    fit_kwargs['known_covariates_names'] = TS_CONFIG['known_covariates_names']\n",
+        "if TS_CONFIG.get('static_features_names'):\n",
+        "    fit_kwargs['static_features_names'] = TS_CONFIG['static_features_names']\n",
+        "if TS_CONFIG.get('target_scaler'):\n",
+        "    fit_kwargs['target_scaler'] = TS_CONFIG['target_scaler']\n",
+        "if TS_CONFIG.get('enable_ensemble') is False:\n",
+        "    fit_kwargs['enable_ensemble'] = False\n",
+        "if TS_CONFIG.get('skip_model_selection'):\n",
+        "    fit_kwargs['skip_model_selection'] = True\n",
+        "if TS_CONFIG.get('use_chronos'):\n",
+        "    chronos_size = TS_CONFIG.get('chronos_model_size', 'tiny')\n",
+        "    fit_kwargs.setdefault('hyperparameters', {})['Chronos'] = {\n",
+        "        'model_path': f'amazon/chronos-t5-{chronos_size}'\n",
+        "    }\n",
+        "\n",
+        "predictor.fit(**fit_kwargs)\n",
+        "print(f\"Training complete. Best model: {predictor.model_best}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 5. Evaluate and Forecast"
+    ]))
+
+    cells.append(make_cell("code", [
+        "leaderboard = predictor.leaderboard(test_ts, silent=True)\n",
+        "leaderboard"
+    ]))
+
+    cells.append(make_cell("code", [
+        "metrics = predictor.evaluate(test_ts, silent=True)\n",
+        "print('Evaluation metrics:')\n",
+        "for metric_name, metric_value in metrics.items():\n",
+        "    print(f\"{metric_name}: {metric_value}\")\n",
+        "metrics"
+    ]))
+
+    cells.append(make_cell("code", [
+        "forecast = predictor.predict(train_ts)\n",
+        "forecast.head()"
+    ]))
+
+    cells.append(make_cell("code", [
+        "try:\n",
+        "    sample_item = forecast.index.get_level_values('item_id').unique()[0]\n",
+        "    history = train_ts.loc[sample_item][CONFIG['target_column']]\n",
+        "    future = forecast.loc[sample_item]\n",
+        "    if 'mean' in future.columns:\n",
+        "        future_series = future['mean']\n",
+        "    else:\n",
+        "        future_series = future.iloc[:, 0]\n",
+        "\n",
+        "    fig, ax = plt.subplots(figsize=(12, 5))\n",
+        "    history.tail(200).plot(ax=ax, label='history')\n",
+        "    future_series.plot(ax=ax, label='forecast')\n",
+        "    ax.set_title(f'Forecast preview for {sample_item}')\n",
+        "    ax.legend()\n",
+        "    plt.tight_layout()\n",
+        "    plt.show()\n",
+        "except Exception as e:\n",
+        "    print(f\"Plot skipped: {e}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## 6. MLflow Experiment Tracking\n",
+        "\n",
+        "Log training metadata and evaluation metrics to MLflow."
+    ]))
+
+    experiment_name = job.experiment_name or job.name.replace(" ", "_")
+
+    cells.append(make_cell("code", [
+        f"EXPERIMENT_NAME = {repr(experiment_name)}\n",
+        "\n",
+        "mlflow.set_experiment(EXPERIMENT_NAME)\n",
+        "\n",
+        "with mlflow.start_run(run_name=CONFIG['job_name']) as run:\n",
+        "    mlflow.log_param('model_type', 'timeseries')\n",
+        "    mlflow.log_param('target_column', CONFIG['target_column'])\n",
+        "    mlflow.log_param('time_column', CONFIG['time_column'])\n",
+        "    mlflow.log_param('id_column', CONFIG['id_column'])\n",
+        "    mlflow.log_param('prediction_length', CONFIG['prediction_length'])\n",
+        "    mlflow.log_param('preset', CONFIG['preset'])\n",
+        "    mlflow.log_param('time_limit', CONFIG['time_limit'])\n",
+        "    mlflow.log_param('best_model', predictor.model_best)\n",
+        "\n",
+        "    for metric_name, metric_value in metrics.items():\n",
+        "        if isinstance(metric_value, (int, float)):\n",
+        "            mlflow.log_metric(metric_name, metric_value)\n",
+        "\n",
+        "    mlflow.set_tag('source', 'automl-notebook')\n",
+        "    mlflow.set_tag('framework', 'autogluon')\n",
+        "\n",
+        "    leaderboard.to_csv('leaderboard.csv', index=False)\n",
+        "    mlflow.log_artifact('leaderboard.csv')\n",
+        "\n",
+        "    print(f\"Logged to MLflow run: {run.info.run_id}\")\n",
+        "    print(f\"Experiment: {EXPERIMENT_NAME}\")"
+    ]))
+
+    cells.append(make_cell("markdown", [
+        "## Summary\n",
+        "\n",
+        "This notebook has:\n",
+        "1. Loaded and prepared the time series dataset\n",
+        "2. Trained an AutoGluon TimeSeriesPredictor\n",
+        "3. Evaluated model performance and generated a forecast preview\n",
+        "4. Logged metadata and metrics to MLflow\n",
+    ]))
+
+    notebook = {
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3"
+            },
+            "language_info": {
+                "name": "python",
+                "version": "3.10.0"
+            },
+            "generated_by": "AutoML UI",
+            "job_id": job.id,
+            "job_name": job.name,
+            "model_type": "timeseries",
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "cells": cells
+    }
+
+    return notebook

@@ -83,9 +83,6 @@ class ModelDiagnostics:
                 except Exception as e:
                     logger.warning(f"Could not get timeseries feature importance: {e}")
 
-            elif model_type == "multimodal":
-                result["message"] = "Feature importance not available for multimodal models"
-
         except Exception as e:
             logger.error(f"Error getting feature importance: {e}")
             result["error"] = str(e)
@@ -496,23 +493,6 @@ class ModelDiagnostics:
                         }
                         models.append(model_data)
                     result["models"] = models
-
-            elif model_type == "multimodal":
-                predictor = load_predictor(model_path, model_type)
-
-                # Check for training logs
-                log_dir = os.path.join(model_path, "logs")
-                if os.path.exists(log_dir):
-                    result["log_dir"] = log_dir
-                    # Try to read training logs if they exist
-                    try:
-                        import json
-                        log_file = os.path.join(log_dir, "trainer_log.json")
-                        if os.path.exists(log_file):
-                            with open(log_file, 'r') as f:
-                                result["training_log"] = json.load(f)
-                    except Exception:
-                        pass
 
             elif model_type == "timeseries":
                 predictor = load_predictor(model_path, model_type)

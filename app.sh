@@ -20,6 +20,7 @@ export FRONTEND_PORT=${FRONTEND_PORT:-3000}
 export PORT=${PORT:-8888}
 export WORKERS=${WORKERS:-1}
 export ENABLE_LOCAL_COMPUTE=${ENABLE_LOCAL_COMPUTE:-true}
+export RELOAD=${RELOAD:-true}
 
 # Detect Domino environment
 IS_DOMINO=false
@@ -124,7 +125,7 @@ start_backend() {
     cd "$service_dir"
     install_lightweight_deps
 
-    if [ "${RELOAD:-false}" = "true" ]; then
+    if [ "${RELOAD:-true}" = "true" ]; then
         echo "Starting backend (dev mode with reload) on port $port..."
         exec uvicorn app.main:app --host "$HOST" --port "$port" --reload --log-level info
     else
@@ -145,7 +146,11 @@ start_backend_background() {
     cd "$service_dir"
     install_lightweight_deps
 
-    uvicorn app.main:app --host 127.0.0.1 --port "$port" --log-level warning &
+    if [ "${RELOAD:-true}" = "true" ]; then
+        uvicorn app.main:app --host 127.0.0.1 --port "$port" --reload --log-level warning &
+    else
+        uvicorn app.main:app --host 127.0.0.1 --port "$port" --log-level warning &
+    fi
     BACKEND_PID=$!
     echo "Backend started (PID: $BACKEND_PID) on port $port"
 

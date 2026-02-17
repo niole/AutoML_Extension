@@ -22,7 +22,7 @@ class RegisterModelRequest(BaseModel):
     """Request to register a model."""
     model_path: str = Field(..., description="Path to the trained model")
     model_name: str = Field(..., description="Name for the registered model")
-    model_type: str = Field(..., description="Type: tabular, timeseries, multimodal")
+    model_type: str = Field(..., description="Type: tabular, timeseries")
     description: str = Field("", description="Model description")
     job_id: Optional[str] = Field(None, description="Job ID that created this model")
     tags: Optional[Dict[str, str]] = Field(None, description="Custom tags")

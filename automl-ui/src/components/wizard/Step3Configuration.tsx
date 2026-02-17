@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useWizard } from '../../hooks/useWizard'
 import Input from '../common/Input'
 import Select from '../common/Select'
-import { Preset, AdvancedAutoGluonConfig, TimeSeriesAdvancedConfig, MultimodalAdvancedConfig } from '../../types/job'
+import { Preset, AdvancedAutoGluonConfig, TimeSeriesAdvancedConfig } from '../../types/job'
 import { AdvancedConfigPanel } from './AdvancedConfigPanel'
 
 const presetOptions = [
@@ -16,7 +16,6 @@ const presetOptions = [
 function Step3Configuration() {
   const { modelType, dataSource, training, setTraining, setJobInfo, jobName, jobDescription } = useWizard()
   const isTimeSeries = modelType?.modelType === 'timeseries'
-  const isMultimodal = modelType?.modelType === 'multimodal'
 
   const [localConfig, setLocalConfig] = useState({
     executionTarget: training?.executionTarget || 'local',
@@ -41,9 +40,6 @@ function Step3Configuration() {
   const [timeseriesConfig, setTimeseriesConfig] = useState<TimeSeriesAdvancedConfig>(
     training?.timeseriesConfig || {}
   )
-  const [multimodalConfig, setMultimodalConfig] = useState<MultimodalAdvancedConfig>(
-    training?.multimodalConfig || {}
-  )
 
   // Get columns from data source
   const columns = dataSource?.columns || []
@@ -65,9 +61,8 @@ function Step3Configuration() {
       experimentName: localConfig.experimentName || undefined,
       advancedConfig: Object.keys(advancedConfig).length > 0 ? advancedConfig : undefined,
       timeseriesConfig: isTimeSeries && Object.keys(timeseriesConfig).length > 0 ? timeseriesConfig : undefined,
-      multimodalConfig: isMultimodal && Object.keys(multimodalConfig).length > 0 ? multimodalConfig : undefined,
     })
-  }, [localConfig, advancedConfig, timeseriesConfig, multimodalConfig, isTimeSeries, isMultimodal, setTraining])
+  }, [localConfig, advancedConfig, timeseriesConfig, isTimeSeries, setTraining])
 
   // Update wizard job info when local info changes
   useEffect(() => {
@@ -86,7 +81,7 @@ function Step3Configuration() {
       </div>
 
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input
             label="Job Name"
             placeholder="My training job"
@@ -101,6 +96,20 @@ function Step3Configuration() {
             value={localJobInfo.description}
             onChange={(e) =>
               setLocalJobInfo((prev) => ({ ...prev, description: e.target.value }))
+            }
+          />
+          <Select
+            label="Execution Target"
+            options={[
+              { value: 'local', label: 'Local (In-App Queue)' },
+              { value: 'domino_job', label: 'Domino Job (External)' },
+            ]}
+            value={localConfig.executionTarget}
+            onChange={(e) =>
+              setLocalConfig((prev) => ({
+                ...prev,
+                executionTarget: e.target.value as 'local' | 'domino_job',
+              }))
             }
           />
         </div>
@@ -198,21 +207,6 @@ function Step3Configuration() {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select
-              label="Execution Target"
-              options={[
-                { value: 'local', label: 'Local (In-App Queue)' },
-                { value: 'domino_job', label: 'Domino Job (External)' },
-              ]}
-              value={localConfig.executionTarget}
-              onChange={(e) =>
-                setLocalConfig((prev) => ({
-                  ...prev,
-                  executionTarget: e.target.value as 'local' | 'domino_job',
-                }))
-              }
-            />
-
-            <Select
               label="Preset"
               options={presetOptions}
               value={localConfig.preset}
@@ -258,10 +252,8 @@ function Step3Configuration() {
             modelType={modelType?.modelType || 'tabular'}
             advancedConfig={advancedConfig}
             timeseriesConfig={isTimeSeries ? timeseriesConfig : undefined}
-            multimodalConfig={isMultimodal ? multimodalConfig : undefined}
             onAdvancedConfigChange={setAdvancedConfig}
             onTimeseriesConfigChange={isTimeSeries ? setTimeseriesConfig : undefined}
-            onMultimodalConfigChange={isMultimodal ? setMultimodalConfig : undefined}
           />
         </div>
       </div>

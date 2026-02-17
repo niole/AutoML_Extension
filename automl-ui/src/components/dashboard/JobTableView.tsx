@@ -24,6 +24,10 @@ function getBestScore(job: Job): string {
   return job.leaderboard[0].score_val.toFixed(4)
 }
 
+function getExecutionTarget(job: Job): string {
+  return job.execution_target === 'domino_job' ? 'Domino Job' : 'Local'
+}
+
 interface JobTableViewProps {
   jobs: Job[]
   onDeleteRequest: (job: Job) => void
@@ -47,6 +51,9 @@ export function JobTableView({ jobs, onDeleteRequest }: JobTableViewProps) {
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-domino-text-secondary uppercase tracking-wide">
               Type
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-domino-text-secondary uppercase tracking-wide">
+              Execution
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-domino-text-secondary uppercase tracking-wide">
               <span className="inline-flex items-center gap-1 cursor-pointer hover:text-domino-text-primary">
@@ -90,6 +97,11 @@ export function JobTableView({ jobs, onDeleteRequest }: JobTableViewProps) {
               </td>
               <td className="px-4 py-3 text-sm text-domino-text-primary capitalize">
                 {job.model_type}
+              </td>
+              <td className="px-4 py-3">
+                <span className="inline-flex items-center text-xs px-2 py-0.5 rounded-[2px] border border-domino-border bg-domino-bg-tertiary text-domino-text-primary">
+                  {getExecutionTarget(job)}
+                </span>
               </td>
               <td className="px-4 py-3">
                 <span className={`inline-flex items-center gap-1.5 text-sm ${getStatusColor(job.status)}`}>

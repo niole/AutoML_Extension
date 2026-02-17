@@ -19,7 +19,6 @@ from app.core.trainers import (
     TrainingProgressCallback,
     TabularTrainer,
     TimeSeriesTrainer,
-    MultimodalTrainer,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,7 +32,6 @@ class AutoGluonRunner:
         self._active_progress: Dict[str, TrainingProgressCallback] = {}
         self.tabular_trainer = TabularTrainer()
         self.timeseries_trainer = TimeSeriesTrainer()
-        self.multimodal_trainer = MultimodalTrainer()
 
     def get_progress(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get training progress for a job."""
@@ -56,7 +54,6 @@ class AutoGluonRunner:
         eval_metric: Optional[str] = None,
         advanced_config: Optional[AdvancedConfig] = None,
         timeseries_config: Optional[Dict[str, Any]] = None,
-        multimodal_config: Optional[Dict[str, Any]] = None,
         log_callback: Optional[Callable] = None,
     ) -> dict[str, Any]:
         """
@@ -116,19 +113,6 @@ class AutoGluonRunner:
                     eval_metric=eval_metric,
                     advanced_config=advanced_config,
                     timeseries_config=timeseries_config,
-                    progress=progress,
-                )
-            elif model_type == ModelType.MULTIMODAL:
-                result = await self.multimodal_trainer.train(
-                    df=df,
-                    target_column=target_column,
-                    model_path=model_path,
-                    problem_type=problem_type,
-                    preset=preset,
-                    time_limit=time_limit,
-                    eval_metric=eval_metric,
-                    advanced_config=advanced_config,
-                    multimodal_config=multimodal_config,
                     progress=progress,
                 )
             else:
@@ -211,4 +195,3 @@ class AutoGluonRunner:
 
         except Exception as e:
             logger.warning(f"Could not log results to MLflow: {e}")
-

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.model_export import get_model_exporter
 from app.core.model_diagnostics import get_model_diagnostics
-from app.core.notebook_generator import generate_binary_classification_notebook
+from app.core.notebook_generator import generate_tabular_notebook, generate_timeseries_notebook
 from app.dependencies import get_db
 from app.db import crud
 from app.api.utils import get_job_paths
@@ -24,7 +24,7 @@ router = APIRouter()
 class ExportONNXRequest(BaseModel):
     """Request for ONNX export."""
     job_id: str = Field(..., description="ID of the completed training job")
-    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries, multimodal (optional)")
+    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries (optional)")
     output_path: Optional[str] = Field(None, description="Optional output path")
 
 
@@ -41,9 +41,8 @@ class ExportONNXResponse(BaseModel):
 class DeploymentPackageRequest(BaseModel):
     """Request for deployment package export."""
     job_id: str = Field(..., description="ID of the completed training job")
-    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries, multimodal (optional)")
+    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries (optional)")
     output_dir: str = Field(..., description="Output directory for deployment package")
-    optimize_for_inference: bool = Field(True, description="Optimize model for inference")
 
 
 class DeploymentPackageResponse(BaseModel):
@@ -57,7 +56,7 @@ class DeploymentPackageResponse(BaseModel):
 class LearningCurvesRequest(BaseModel):
     """Request for learning curves."""
     job_id: str = Field(..., description="ID of the completed training job")
-    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries, multimodal (optional)")
+    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries (optional)")
 
 
 class LearningCurvesResponse(BaseModel):
@@ -73,7 +72,7 @@ class LearningCurvesResponse(BaseModel):
 class ModelComparisonRequest(BaseModel):
     """Request for model comparison."""
     model_paths: list = Field(..., description="List of model paths to compare")
-    model_type: str = Field(..., description="Type: tabular, timeseries, multimodal")
+    model_type: str = Field(..., description="Type: tabular, timeseries")
     data_path: Optional[str] = Field(None, description="Path to test data")
 
 
@@ -84,6 +83,26 @@ class ModelComparisonResponse(BaseModel):
     chart: Optional[str] = None  # base64 encoded
     best_model: Optional[str] = None
     error: Optional[str] = None
+
+
+def _normalize_model_type(raw_model_type: Any) -> Optional[str]:
+    """Normalize enum/legacy model_type values to canonical API keys."""
+    if raw_model_type is None:
+        return None
+
+    value = raw_model_type.value if hasattr(raw_model_type, "value") else str(raw_model_type)
+    normalized = str(value).strip().lower()
+
+    if normalized.startswith("modeltype."):
+        normalized = normalized.split(".", 1)[1]
+
+    compact = normalized.replace("_", "").replace("-", "").replace(" ", "")
+    if compact == "tabular":
+        return "tabular"
+    if compact == "timeseries":
+        return "timeseries"
+
+    return normalized or None
 
 
 @router.post("/export/onnx", response_model=ExportONNXResponse)
@@ -121,7 +140,6 @@ async def export_deployment_package(
         model_path=model_path,
         model_type=actual_model_type,
         output_dir=request.output_dir,
-        optimize_for_inference=request.optimize_for_inference
     )
 
     return DeploymentPackageResponse(**result)
@@ -192,25 +210,6 @@ async def get_supported_formats():
                 "requirements": []
             }
         },
-        "multimodal": {
-            "onnx": {
-                "supported": True,
-                "description": "ONNX format for neural network models",
-                "requirements": []
-            },
-            "deployment_package": {
-                "supported": True,
-                "description": "Complete deployment package with inference script"
-            },
-            "shap_analysis": {
-                "supported": False,
-                "description": "SHAP not yet supported for multimodal models"
-            },
-            "notebook": {
-                "supported": False,
-                "description": "Notebook export not yet supported for multimodal"
-            }
-        },
         "timeseries": {
             "onnx": {
                 "supported": False,
@@ -225,8 +224,8 @@ async def get_supported_formats():
                 "description": "SHAP not yet supported for time series models"
             },
             "notebook": {
-                "supported": False,
-                "description": "Notebook export not yet supported for time series"
+                "supported": True,
+                "description": "Jupyter notebook with time series training and forecasting code"
             }
         }
     }
@@ -249,22 +248,21 @@ async def export_notebook(
     if not job:
         raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
 
-    # Validate model type
-    if job.model_type.value != "tabular":
+    model_type = _normalize_model_type(job.model_type)
+
+    if model_type == "tabular":
+        notebook_content = generate_tabular_notebook(job)
+    elif model_type == "timeseries":
+        notebook_content = generate_timeseries_notebook(job)
+    else:
         raise HTTPException(
             status_code=400,
-            detail="Notebook export is only supported for tabular models"
+            detail=(
+                "Notebook export is supported for tabular and timeseries models only. "
+                f"Received model_type={model_type!r}"
+            ),
         )
 
-    # Validate problem type
-    if job.problem_type and job.problem_type.value != "binary":
-        raise HTTPException(
-            status_code=400,
-            detail="Notebook export is not yet supported for this problem type"
-        )
-
-    # Generate the notebook
-    notebook_content = generate_binary_classification_notebook(job)
     filename = f"{job.name.replace(' ', '_')}_automl.ipynb"
 
     # Return as JSON for frontend to handle download

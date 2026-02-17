@@ -79,7 +79,7 @@ async def _run_diagnostics(
 class PredictRequest(BaseModel):
     """Request for single/batch predictions."""
     model_id: str = Field(..., description="ID/path of the trained model")
-    model_type: str = Field(..., description="Type: tabular, timeseries, multimodal")
+    model_type: str = Field(..., description="Type: tabular, timeseries")
     data: Optional[List[Dict[str, Any]]] = Field(None, description="Data rows for prediction")
     file_path: Optional[str] = Field(None, description="Path to data file")
     return_probabilities: bool = Field(False, description="Return class probabilities")
@@ -130,7 +130,7 @@ class FeatureImportanceRequest(BaseModel):
     """Request for feature importance."""
     job_id: str = Field(..., description="ID of the completed training job")
     # model_type is optional - will be looked up from job if not provided
-    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries, multimodal (optional)")
+    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries (optional)")
     # data_path is optional - will use job's file_path if not provided
     data_path: Optional[str] = Field(None, description="Optional path to data for permutation importance")
 
@@ -149,7 +149,7 @@ class DiagnosticsRequest(BaseModel):
     """Request for model diagnostics (uses job_id to look up paths)."""
     job_id: str = Field(..., description="ID of the completed training job")
     # Optional overrides - will use job's values if not provided
-    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries, multimodal (optional)")
+    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries (optional)")
     data_path: Optional[str] = Field(None, description="Path to data file (optional, uses job's file_path)")
 
 
@@ -272,7 +272,7 @@ async def get_feature_importance(
 class LeaderboardRequest(BaseModel):
     """Request for model leaderboard (shows all models trained in a job)."""
     job_id: str = Field(..., description="ID of the completed training job")
-    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries, multimodal (optional)")
+    model_type: Optional[str] = Field(None, description="Type: tabular, timeseries (optional)")
 
 
 @router.post("/model/leaderboard")

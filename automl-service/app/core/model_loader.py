@@ -12,7 +12,7 @@ def load_predictor(model_path: str, model_type: str) -> Any:
 
     Args:
         model_path: Path to the saved model directory.
-        model_type: One of "tabular", "timeseries", "multimodal".
+        model_type: One of "tabular", "timeseries".
 
     Returns:
         The loaded AutoGluon predictor.
@@ -33,9 +33,6 @@ def load_predictor(model_path: str, model_type: str) -> Any:
     elif model_type == "timeseries":
         from autogluon.timeseries import TimeSeriesPredictor
         return TimeSeriesPredictor.load(str(path))
-    elif model_type == "multimodal":
-        from autogluon.multimodal import MultiModalPredictor
-        return MultiModalPredictor.load(str(path))
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 

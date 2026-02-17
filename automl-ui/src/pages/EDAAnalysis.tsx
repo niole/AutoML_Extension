@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useDatasets, useUploadFile, useDatasetPreview } from '../hooks/useDatasets'
 import { useProfiling } from '../hooks/useProfiling'
 import { useStore } from '../store'
@@ -15,6 +15,7 @@ interface TransformConfig {
 }
 
 function EDAAnalysis() {
+  const [searchParams] = useSearchParams()
   const { data: datasetsData, isLoading: loadingDatasets } = useDatasets()
   const uploadMutation = useUploadFile()
   const addNotification = useStore((state) => state.addNotification)
@@ -45,8 +46,46 @@ function EDAAnalysis() {
   const [asyncDominoJobId, setAsyncDominoJobId] = useState<string | null>(null)
   const [asyncProfileStatus, setAsyncProfileStatus] = useState<'idle' | 'starting' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
   const [asyncProfileError, setAsyncProfileError] = useState<string | null>(null)
+  const [querySelectionApplied, setQuerySelectionApplied] = useState(false)
 
   const datasets = datasetsData?.datasets || []
+
+  useEffect(() => {
+    if (querySelectionApplied) return
+
+    const queryFilePath = searchParams.get('file_path')
+    const queryDatasetId = searchParams.get('dataset_id')
+    const querySourceType = searchParams.get('data_source')
+
+    if (!queryFilePath && !queryDatasetId && !querySourceType) {
+      setQuerySelectionApplied(true)
+      return
+    }
+
+    if (querySourceType === 'domino_dataset' || querySourceType === 'mounted') {
+      setSourceType('dataset')
+    } else if (querySourceType === 'upload') {
+      setSourceType('upload')
+    }
+
+    if (queryFilePath) {
+      setSelectedFilePath(queryFilePath)
+      setSelectedFileName(getFileName(queryFilePath))
+      setQuerySelectionApplied(true)
+      return
+    }
+
+    if (queryDatasetId) {
+      if (loadingDatasets) return
+
+      const datasetMatch = datasets.find((dataset) => dataset.id === queryDatasetId)
+      if (datasetMatch) {
+        setSelectedDataset(datasetMatch)
+      }
+    }
+
+    setQuerySelectionApplied(true)
+  }, [datasets, loadingDatasets, querySelectionApplied, searchParams])
 
   const offset = (currentPage - 1) * pageSize
   const { data: preview, isLoading: previewLoading, error: previewError } = useDatasetPreview(
@@ -476,3 +515,8 @@ function EDAAnalysis() {
 }
 
 export default EDAAnalysis
+
+function getFileName(path: string): string {
+  const segments = path.split('/')
+  return segments[segments.length - 1] || path
+}

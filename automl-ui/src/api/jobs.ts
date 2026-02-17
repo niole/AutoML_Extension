@@ -14,6 +14,32 @@ interface JobMetricsResponse {
   leaderboard: Record<string, unknown>[] | null
 }
 
+export interface OrphanArtifact {
+  path: string
+  size_bytes: number
+  name: string
+  run_id?: string
+  experiment_id?: string
+  job_id?: string | null
+}
+
+export interface OrphanPreviewResponse {
+  orphaned_models: OrphanArtifact[]
+  orphaned_uploads: OrphanArtifact[]
+  orphaned_mlflow_runs: OrphanArtifact[]
+  total_orphaned_model_size_bytes: number
+  total_orphaned_upload_size_bytes: number
+  total_orphaned_mlflow_run_size_bytes: number
+}
+
+export interface CleanupOrphansResponse {
+  models_deleted: number
+  uploads_deleted: number
+  mlflow_runs_deleted: number
+  total_size_freed_bytes: number
+  errors: string[]
+}
+
 export async function getJobs(params?: { skip?: number; limit?: number; status?: string }): Promise<JobListResponse> {
   // Use POST for Domino compatibility (svcjobs is POST endpoint)
   const response = await api.post<JobListResponse>('/jobs', params || {})
@@ -52,4 +78,14 @@ export async function cancelJob(jobId: string): Promise<void> {
 
 export async function deleteJob(jobId: string): Promise<void> {
   await api.post('/jobdelete', { job_id: jobId })
+}
+
+export async function getOrphanPreview(): Promise<OrphanPreviewResponse> {
+  const response = await api.post<OrphanPreviewResponse>('/joborphans', {})
+  return response.data
+}
+
+export async function cleanupOrphans(): Promise<CleanupOrphansResponse> {
+  const response = await api.post<CleanupOrphansResponse>('/jobcleanuporphans', {})
+  return response.data
 }

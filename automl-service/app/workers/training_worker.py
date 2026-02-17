@@ -205,7 +205,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             if advanced_config:
                 adv_config = parse_advanced_config(advanced_config)
             elif job.autogluon_config:
-                # Config is stored as {"advanced": {...}, "timeseries": {...}, "multimodal": {...}}
+                # Config is stored as {"advanced": {...}, "timeseries": {...}}
                 if "advanced" in job.autogluon_config:
                     adv_config = parse_advanced_config(job.autogluon_config["advanced"])
                     logger.info(f"[TRAINING] Parsed advanced config: {adv_config}")
@@ -246,16 +246,12 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
 
             await progress_reporter.on_progress_update(10, "Loading data")
 
-            # Parse timeseries and multimodal configs
+            # Parse timeseries config
             timeseries_config = None
-            multimodal_config = None
             if job.autogluon_config:
                 if "timeseries" in job.autogluon_config:
                     timeseries_config = job.autogluon_config["timeseries"]
                     logger.info(f"[TRAINING] Parsed timeseries config: {timeseries_config}")
-                if "multimodal" in job.autogluon_config:
-                    multimodal_config = job.autogluon_config["multimodal"]
-                    logger.info(f"[TRAINING] Parsed multimodal config: {multimodal_config}")
 
             # Run training with advanced config
             result = await runner.run_training(
@@ -272,7 +268,6 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 eval_metric=job.eval_metric,
                 advanced_config=adv_config,
                 timeseries_config=timeseries_config,
-                multimodal_config=multimodal_config,
             )
 
             await crud.add_job_log(db, job_id, "Training completed successfully")

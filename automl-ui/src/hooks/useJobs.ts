@@ -1,5 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getJobs, getJob, getJobStatus, getJobLogs, createJob, cancelJob, deleteJob } from '../api/jobs'
+import {
+  getJobs,
+  getJob,
+  getJobStatus,
+  getJobLogs,
+  createJob,
+  cancelJob,
+  deleteJob,
+  getOrphanPreview,
+  cleanupOrphans,
+} from '../api/jobs'
 import { JobCreateRequest } from '../types/job'
 
 export function useJobs(params?: { skip?: number; limit?: number; status?: string }) {
@@ -71,6 +81,26 @@ export function useDeleteJob() {
   return useMutation({
     mutationFn: (jobId: string) => deleteJob(jobId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
+}
+
+export function useOrphanPreview(enabled = true) {
+  return useQuery({
+    queryKey: ['orphanPreview'],
+    queryFn: () => getOrphanPreview(),
+    enabled,
+  })
+}
+
+export function useCleanupOrphans() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => cleanupOrphans(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orphanPreview'] })
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
     },
   })

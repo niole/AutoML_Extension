@@ -1,17 +1,19 @@
 import { useRef, useEffect } from 'react'
-import { StopIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline'
+import { StopIcon, CloudArrowUpIcon, RocketLaunchIcon, CubeIcon } from '@heroicons/react/24/outline'
 import type { Job } from '../../types/job'
 
 interface JobHeaderProps {
   job: Job | undefined
   currentStatus: string
   cancelIsPending: boolean
-  showRegisterDropdown: boolean
+  showDeployDropdown: boolean
   showActionsDropdown: boolean
   onCancel: () => void
-  onToggleRegisterDropdown: () => void
-  onCloseRegisterDropdown: () => void
+  onToggleDeployDropdown: () => void
+  onCloseDeployDropdown: () => void
   onOpenRegisterDialog: () => void
+  onOpenDeployApiDialog: () => void
+  onOpenDockerExportDialog: () => void
   onToggleActionsDropdown: () => void
   onCloseActionsDropdown: () => void
   onOpenDeleteConfirm: () => void
@@ -21,24 +23,27 @@ export function JobHeader({
   job,
   currentStatus,
   cancelIsPending,
-  showRegisterDropdown,
+  showDeployDropdown,
   showActionsDropdown,
   onCancel,
-  onToggleRegisterDropdown,
-  onCloseRegisterDropdown,
+  onToggleDeployDropdown,
+  onCloseDeployDropdown,
   onOpenRegisterDialog,
+  onOpenDeployApiDialog,
+  onOpenDockerExportDialog,
   onToggleActionsDropdown,
   onCloseActionsDropdown,
   onOpenDeleteConfirm,
 }: JobHeaderProps) {
-  const registerDropdownRef = useRef<HTMLDivElement>(null)
+  const deployDropdownRef = useRef<HTMLDivElement>(null)
   const actionsDropdownRef = useRef<HTMLDivElement>(null)
+  const executionTargetLabel = job?.execution_target === 'domino_job' ? 'Domino Job' : 'Local'
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (registerDropdownRef.current && !registerDropdownRef.current.contains(event.target as Node)) {
-        onCloseRegisterDropdown()
+      if (deployDropdownRef.current && !deployDropdownRef.current.contains(event.target as Node)) {
+        onCloseDeployDropdown()
       }
       if (actionsDropdownRef.current && !actionsDropdownRef.current.contains(event.target as Node)) {
         onCloseActionsDropdown()
@@ -46,7 +51,7 @@ export function JobHeader({
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onCloseRegisterDropdown, onCloseActionsDropdown])
+  }, [onCloseDeployDropdown, onCloseActionsDropdown])
 
   return (
     <div className="flex items-center justify-between flex-wrap mb-5">
@@ -54,6 +59,17 @@ export function JobHeader({
         <h1 className="text-2xl font-normal text-domino-text-primary leading-tight">
           {job ? `Run: ${job.name}` : 'Training in Progress'}
         </h1>
+        {job && (
+          <div className="mt-1 flex items-center gap-2 text-xs">
+            <span className="text-domino-text-secondary">Execution:</span>
+            <span className="px-2 py-0.5 border border-domino-border rounded-[2px] text-domino-text-primary bg-domino-bg-tertiary">
+              {executionTargetLabel}
+            </span>
+            {job.execution_target === 'domino_job' && job.domino_job_status && (
+              <span className="text-domino-text-muted">Status: {job.domino_job_status}</span>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-3">
         {['pending', 'running'].includes(currentStatus) && (
@@ -67,24 +83,38 @@ export function JobHeader({
           </button>
         )}
         {currentStatus === 'completed' && job?.model_path && (
-          <div className="relative" ref={registerDropdownRef}>
+          <div className="relative" ref={deployDropdownRef}>
             <button
-              onClick={onToggleRegisterDropdown}
+              onClick={onToggleDeployDropdown}
               className="h-[32px] px-[15px] bg-domino-accent-purple text-white text-sm font-normal rounded-[2px] hover:bg-domino-accent-purple-hover transition-all duration-200 inline-flex items-center gap-1.5"
             >
-              Register
+              Deploy
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
-            {showRegisterDropdown && (
-              <div className="absolute right-0 mt-1 w-48 bg-white shadow-lg border border-gray-200 py-1 z-50">
+            {showDeployDropdown && (
+              <div className="absolute right-0 mt-1 w-72 bg-white shadow-lg border border-gray-200 py-1 z-50">
                 <button
                   onClick={onOpenRegisterDialog}
                   className="w-full px-4 py-2 text-left text-sm text-domino-text-primary hover:bg-domino-bg-tertiary flex items-center gap-2 transition-colors"
                 >
                   <CloudArrowUpIcon className="w-4 h-4" />
-                  Deploy to Registry
+                  Register in Domino Model Registry
+                </button>
+                <button
+                  onClick={onOpenDeployApiDialog}
+                  className="w-full px-4 py-2 text-left text-sm text-domino-text-primary hover:bg-domino-bg-tertiary flex items-center gap-2 transition-colors"
+                >
+                  <RocketLaunchIcon className="w-4 h-4" />
+                  Publish as Domino Model API
+                </button>
+                <button
+                  onClick={onOpenDockerExportDialog}
+                  className="w-full px-4 py-2 text-left text-sm text-domino-text-primary hover:bg-domino-bg-tertiary flex items-center gap-2 transition-colors"
+                >
+                  <CubeIcon className="w-4 h-4" />
+                  Export as Docker Container
                 </button>
               </div>
             )}

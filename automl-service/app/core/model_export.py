@@ -29,7 +29,7 @@ class ModelExporter:
 
         Args:
             model_path: Path to the trained AutoGluon model
-            model_type: Type of model (tabular, timeseries, multimodal)
+            model_type: Type of model (tabular, timeseries)
             output_path: Optional output path for ONNX file
             sample_data: Sample data for tracing
 
@@ -50,8 +50,6 @@ class ModelExporter:
 
             if model_type == "tabular":
                 result = self._export_tabular_onnx(model_path, output_path, sample_data)
-            elif model_type == "multimodal":
-                result = self._export_multimodal_onnx(model_path, output_path, sample_data)
             else:
                 result["error"] = f"ONNX export not supported for {model_type} models"
 
@@ -134,53 +132,11 @@ class ModelExporter:
                 "error": str(e)
             }
 
-    def _export_multimodal_onnx(
-        self,
-        model_path: str,
-        output_path: str,
-        sample_data: Optional[Any] = None
-    ) -> Dict[str, Any]:
-        """Export multimodal model to ONNX."""
-        try:
-            from autogluon.multimodal import MultiModalPredictor
-
-            predictor = MultiModalPredictor.load(model_path)
-
-            # AutoMM supports ONNX export for some backbones
-            try:
-                predictor.export_onnx(
-                    output_path=output_path,
-                    sample_data=sample_data
-                )
-
-                return {
-                    "success": True,
-                    "output_path": output_path,
-                    "format": "onnx",
-                    "error": None
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "output_path": None,
-                    "format": "onnx",
-                    "error": f"ONNX export failed: {e}"
-                }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "output_path": None,
-                "format": "onnx",
-                "error": str(e)
-            }
-
     def export_for_deployment(
         self,
         model_path: str,
         model_type: str,
         output_dir: str,
-        optimize_for_inference: bool = True
     ) -> Dict[str, Any]:
         """
         Export model with all files needed for deployment.
@@ -231,7 +187,6 @@ class ModelExporter:
             metadata = {
                 "model_type": model_type,
                 "framework": "autogluon",
-                "optimized": optimize_for_inference,
             }
             meta_path = os.path.join(deploy_dir, "model_metadata.json")
             with open(meta_path, "w") as f:
@@ -326,36 +281,7 @@ if __name__ == "__main__":
         print(json.dumps(result))
 '''
         else:
-            return '''"""AutoGluon MultiModal inference script."""
-import json
-from autogluon.multimodal import MultiModalPredictor
-
-# Load model
-predictor = MultiModalPredictor.load("./model")
-
-def predict(data):
-    """Make predictions on input data."""
-    predictions = predictor.predict(data)
-    probabilities = None
-
-    try:
-        probabilities = predictor.predict_proba(data)
-    except Exception:
-        pass
-
-    return {
-        "predictions": predictions.tolist() if hasattr(predictions, 'tolist') else predictions,
-        "probabilities": probabilities.to_dict() if probabilities is not None else None
-    }
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        with open(sys.argv[1]) as f:
-            data = json.load(f)
-        result = predict(data)
-        print(json.dumps(result))
-'''
+            raise ValueError(f"Unsupported model type for deployment script: {model_type}")
 
     def _generate_requirements(self, model_type: str) -> str:
         """Generate requirements.txt based on model type."""
@@ -370,7 +296,7 @@ if __name__ == "__main__":
         elif model_type == "timeseries":
             base_reqs.append("autogluon.timeseries")
         else:
-            base_reqs.append("autogluon.multimodal")
+            raise ValueError(f"Unsupported model type for deployment requirements: {model_type}")
 
         return "\n".join(base_reqs)
 

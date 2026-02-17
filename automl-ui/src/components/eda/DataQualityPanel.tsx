@@ -264,7 +264,7 @@ export function DataQualityPanel({ warnings, recommendations, columns }: DataQua
               <DocumentTextIcon className="h-5 w-5 text-purple-600 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm text-purple-800">
-                  Text columns detected - consider using Multimodal model type for better text handling
+                  Text columns detected - tabular models can use text features, but feature cleanup may improve results
                 </p>
               </div>
               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">Suggestion</span>

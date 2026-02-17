@@ -1,6 +1,6 @@
 # AutoML Studio
 
-A full-stack AutoML platform built on [AutoGluon](https://auto.gluon.ai/) and [Domino Data Lab](https://www.dominodatalab.com/). Provides a web UI for training, evaluating, and deploying ML models across tabular, time series, and multimodal data types.
+A full-stack AutoML platform built on [AutoGluon](https://auto.gluon.ai/) and [Domino Data Lab](https://www.dominodatalab.com/). Provides a web UI for training, evaluating, and deploying ML models across tabular and time series data types.
 
 ## Architecture
 
@@ -21,7 +21,7 @@ Dockerfile               Container build for Domino deployment
 | `app/api/routes/` | 9 routers | REST endpoints (50+ routes) + WebSocket |
 | `app/api/schemas/` | 3 files | Pydantic request/response models |
 | `app/core/` | 12 services | Predictions, diagnostics, export, MLflow, Domino integration |
-| `app/core/trainers/` | 4 trainers | Tabular, timeseries, multimodal training (split from monolithic runner) |
+| `app/core/trainers/` | 3 trainers | Tabular and timeseries training (split from monolithic runner) |
 | `app/db/` | 3 files | SQLAlchemy models, async CRUD, migrations |
 | `app/workers/` | 1 file | Background training orchestration |
 
@@ -224,7 +224,7 @@ For Domino proxy constraints, the backend also exposes single-segment `/svc*` ro
 
 ### Backend
 - **Python 3.11** with async FastAPI
-- **AutoGluon 1.5** (Tabular, TimeSeries, Multimodal)
+- **AutoGluon 1.5** (Tabular, TimeSeries)
 - **SQLAlchemy 2.0** + aiosqlite (async SQLite)
 - **MLflow 3.9** for experiment tracking
 - **Ray Tune** for hyperparameter optimization

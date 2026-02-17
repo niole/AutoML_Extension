@@ -21,7 +21,6 @@ export interface DeploymentPackageRequest {
   job_id: string
   model_type?: string
   output_dir: string
-  optimize_for_inference?: boolean
 }
 
 export interface DeploymentPackageResponse {
@@ -59,7 +58,6 @@ export interface ExportFormat {
 
 export interface SupportedFormats {
   tabular: Record<string, ExportFormat>
-  multimodal: Record<string, ExportFormat>
   timeseries: Record<string, ExportFormat>
 }
 
@@ -139,4 +137,3 @@ export function useExportNotebook() {
     },
   })
 }
-

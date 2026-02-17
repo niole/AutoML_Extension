@@ -24,7 +24,6 @@ class ModelType(str, enum.Enum):
     """AutoGluon model type."""
     TABULAR = "tabular"
     TIMESERIES = "timeseries"
-    MULTIMODAL = "multimodal"
 
 
 class ProblemType(str, enum.Enum):

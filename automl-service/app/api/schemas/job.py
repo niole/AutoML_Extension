@@ -276,40 +276,6 @@ class TimeSeriesAdvancedConfig(BaseModel):
     )
 
 
-class MultimodalAdvancedConfig(BaseModel):
-    """Advanced configuration for multimodal models."""
-
-    # Text processing
-    text_backbone: Optional[str] = Field(
-        None,
-        description="Text model backbone (e.g., 'google/electra-base-discriminator')"
-    )
-    text_max_length: int = Field(512, ge=32, le=2048, description="Max text sequence length")
-
-    # Image processing
-    image_backbone: Optional[str] = Field(
-        None,
-        description="Image model backbone (e.g., 'swin_base_patch4_window7_224')"
-    )
-    image_size: int = Field(224, ge=32, le=512, description="Image input size")
-
-    # Training
-    learning_rate: Optional[float] = Field(None, ge=1e-6, le=1e-1, description="Learning rate")
-    batch_size: Optional[int] = Field(None, ge=1, le=128, description="Batch size")
-    max_epochs: Optional[int] = Field(None, ge=1, le=1000, description="Max training epochs")
-    warmup_steps: Optional[int] = Field(None, ge=0, description="Learning rate warmup steps")
-
-    # Optimization
-    weight_decay: float = Field(0.01, ge=0, le=1, description="Weight decay")
-    gradient_clip_val: float = Field(1.0, ge=0, description="Gradient clipping value")
-
-    # Fusion
-    fusion_method: str = Field(
-        "late",
-        description="Feature fusion method: 'late', 'early'"
-    )
-
-
 class JobCreateRequest(BaseModel):
     """Request schema for creating a training job."""
 
@@ -317,7 +283,7 @@ class JobCreateRequest(BaseModel):
     description: Optional[str] = Field(None, description="Job description")
 
     # Model type
-    model_type: Literal["tabular", "timeseries", "multimodal"] = Field(
+    model_type: Literal["tabular", "timeseries"] = Field(
         ..., description="AutoGluon model type"
     )
     problem_type: Optional[Literal["binary", "multiclass", "regression", "quantile"]] = Field(
@@ -379,9 +345,6 @@ class JobCreateRequest(BaseModel):
     )
     timeseries_config: Optional[TimeSeriesAdvancedConfig] = Field(
         None, description="Time series specific configuration"
-    )
-    multimodal_config: Optional[MultimodalAdvancedConfig] = Field(
-        None, description="Multimodal specific configuration"
     )
 
     # Experiment tracking
@@ -452,7 +415,6 @@ class JobResponse(BaseModel):
     error_message: Optional[str] = None
     advanced_config: Optional[Dict[str, Any]] = None
     timeseries_config: Optional[Dict[str, Any]] = None
-    multimodal_config: Optional[Dict[str, Any]] = None
     is_registered: bool = False
     registered_model_name: Optional[str] = None
     registered_model_version: Optional[str] = None

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import {
+  ArchiveBoxXMarkIcon,
   MagnifyingGlassIcon,
   Squares2X2Icon,
   TableCellsIcon,
@@ -17,6 +18,7 @@ interface DashboardFiltersProps {
   onTypeFilterChange: (value: string) => void
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
+  onStorageCleanupClick: () => void
 }
 
 export function DashboardFilters({
@@ -28,6 +30,7 @@ export function DashboardFilters({
   onTypeFilterChange,
   viewMode,
   onViewModeChange,
+  onStorageCleanupClick,
 }: DashboardFiltersProps) {
   return (
     <>
@@ -50,6 +53,13 @@ export function DashboardFilters({
               New training job
             </button>
           </Link>
+          <button
+            onClick={onStorageCleanupClick}
+            className="h-[32px] px-[15px] bg-white text-domino-text-primary text-sm font-normal rounded-[2px] border border-[#d9d9d9] hover:border-domino-accent-purple hover:text-domino-accent-purple transition-all duration-200 inline-flex items-center gap-2"
+          >
+            <ArchiveBoxXMarkIcon className="h-4 w-4" />
+            Storage cleanup
+          </button>
         </div>
       </div>
 
@@ -93,7 +103,6 @@ export function DashboardFilters({
             { value: '', label: 'All types' },
             { value: 'tabular', label: 'Tabular' },
             { value: 'timeseries', label: 'Time series' },
-            { value: 'multimodal', label: 'Multimodal' },
           ]}
         />
 

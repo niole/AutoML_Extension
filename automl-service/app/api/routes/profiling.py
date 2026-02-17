@@ -305,32 +305,6 @@ async def get_available_presets():
                 "description": "Uses pretrained Chronos model. No training required.",
                 "time_multiplier": 0.1
             }
-        ],
-        "multimodal": [
-            {
-                "value": "best_quality",
-                "label": "Best Quality",
-                "description": "Maximum accuracy with large foundation models.",
-                "time_multiplier": 10
-            },
-            {
-                "value": "high_quality",
-                "label": "High Quality",
-                "description": "Good accuracy with reasonable resources.",
-                "time_multiplier": 5
-            },
-            {
-                "value": "medium_quality",
-                "label": "Medium Quality",
-                "description": "Balanced performance.",
-                "time_multiplier": 2
-            },
-            {
-                "value": "multilingual",
-                "label": "Multilingual",
-                "description": "Optimized for multilingual text data.",
-                "time_multiplier": 2
-            }
         ]
     }
 

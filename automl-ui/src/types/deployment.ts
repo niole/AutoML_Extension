@@ -59,9 +59,11 @@ export interface DeploymentListResponse {
 export interface DeploymentResponse {
   success: boolean
   deployment_id?: string
+  model_api_id?: string
   status?: string
   message?: string
   url?: string
+  endpoint_url?: string
   error?: string
   data?: Record<string, unknown>
 }

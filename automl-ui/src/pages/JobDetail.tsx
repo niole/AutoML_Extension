@@ -6,6 +6,8 @@ import { SimpleProgressBar } from '../components/training/TrainingProgressPanel'
 import { ModelDiagnosticsPanel } from '../components/diagnostics/ModelDiagnosticsPanel'
 import { LearningCurvesPanel } from '../components/diagnostics/LearningCurvesPanel'
 import { RegisterModelDialog } from '../components/registry/ModelRegistryPanel'
+import { DeployModelApiDialog } from '../components/deployment/DeployModelApiDialog'
+import { ExportDockerDialog } from '../components/export/ExportDockerDialog'
 import { ModelExportPanel } from '../components/export/ModelExportPanel'
 import { TimeSeriesForecastPanel } from '../components/timeseries/TimeSeriesForecastPanel'
 import { InteractiveLeaderboard } from '../components/leaderboard/InteractiveLeaderboard'
@@ -28,7 +30,9 @@ function JobDetail() {
 
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
   const [showRegisterDialog, setShowRegisterDialog] = useState(false)
-  const [showRegisterDropdown, setShowRegisterDropdown] = useState(false)
+  const [showDeployApiDialog, setShowDeployApiDialog] = useState(false)
+  const [showDockerExportDialog, setShowDockerExportDialog] = useState(false)
+  const [showDeployDropdown, setShowDeployDropdown] = useState(false)
   const [showActionsDropdown, setShowActionsDropdown] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
@@ -95,14 +99,22 @@ function JobDetail() {
         job={job}
         currentStatus={currentStatus}
         cancelIsPending={cancelMutation.isPending}
-        showRegisterDropdown={showRegisterDropdown}
+        showDeployDropdown={showDeployDropdown}
         showActionsDropdown={showActionsDropdown}
         onCancel={handleCancel}
-        onToggleRegisterDropdown={() => setShowRegisterDropdown(!showRegisterDropdown)}
-        onCloseRegisterDropdown={() => setShowRegisterDropdown(false)}
+        onToggleDeployDropdown={() => setShowDeployDropdown(!showDeployDropdown)}
+        onCloseDeployDropdown={() => setShowDeployDropdown(false)}
         onOpenRegisterDialog={() => {
-          setShowRegisterDropdown(false)
+          setShowDeployDropdown(false)
           setShowRegisterDialog(true)
+        }}
+        onOpenDeployApiDialog={() => {
+          setShowDeployDropdown(false)
+          setShowDeployApiDialog(true)
+        }}
+        onOpenDockerExportDialog={() => {
+          setShowDeployDropdown(false)
+          setShowDockerExportDialog(true)
         }}
         onToggleActionsDropdown={() => setShowActionsDropdown(!showActionsDropdown)}
         onCloseActionsDropdown={() => setShowActionsDropdown(false)}
@@ -195,6 +207,28 @@ function JobDetail() {
           modelPath={job.model_path}
           onClose={() => setShowRegisterDialog(false)}
           onSuccess={() => setShowRegisterDialog(false)}
+        />
+      )}
+
+      {/* Deploy Model API Dialog */}
+      {showDeployApiDialog && job?.model_path && (
+        <DeployModelApiDialog
+          jobId={job.id}
+          defaultModelName={job.name}
+          onClose={() => setShowDeployApiDialog(false)}
+          onSuccess={() => setShowDeployApiDialog(false)}
+        />
+      )}
+
+      {/* Export Docker Container Dialog */}
+      {showDockerExportDialog && job && (
+        <ExportDockerDialog
+          jobId={job.id}
+          jobName={job.name}
+          projectName={job.project_name}
+          modelType={job.model_type}
+          onClose={() => setShowDockerExportDialog(false)}
+          onSuccess={() => setShowDockerExportDialog(false)}
         />
       )}
 

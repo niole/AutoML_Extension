@@ -2,7 +2,6 @@ import clsx from 'clsx'
 import {
   TableCellsIcon,
   ChartBarIcon,
-  PhotoIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline'
 import { useWizard } from '../../hooks/useWizard'
@@ -37,17 +36,6 @@ const modelOptions: ModelOption[] = [
       'Production forecasting',
       'Demand prediction',
       'Anomaly detection',
-    ],
-  },
-  {
-    type: 'multimodal',
-    name: 'Multimodal',
-    description: 'For mixed data types including images and text',
-    icon: PhotoIcon,
-    useCases: [
-      'Seismic interpretation',
-      'Document analysis',
-      'Image + metadata',
     ],
   },
 ]
@@ -100,15 +88,13 @@ function Step2ModelType() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {modelOptions.map((option) => (
           <button
             key={option.type}
             onClick={() => handleSelectModelType(option.type)}
-            disabled={option.type === 'multimodal'}
             className={clsx(
               'p-6 rounded-lg border-2 transition-colors text-left relative',
-              option.type === 'multimodal' && 'opacity-50 cursor-not-allowed',
               modelType?.modelType === option.type
                 ? 'border-domino-accent-purple bg-domino-accent-purple/10'
                 : 'border-domino-border hover:border-domino-text-muted'

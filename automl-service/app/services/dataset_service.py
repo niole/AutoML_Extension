@@ -21,7 +21,8 @@ from app.api.schemas.dataset import (
 from app.config import get_settings
 from app.core.dataset_manager import DominoDatasetManager
 
-LOCAL_DATASET_ROOT = "/domino/datasets/local"
+DEFAULT_DOMINO_DATASET_ROOT = "/domino/datasets/local"
+DATASET_MOUNT_PATH_ENV = "DOMINO_DATASET_MOUNT_PATH"
 ALLOWED_UPLOAD_EXTENSIONS = (".csv", ".parquet", ".pq")
 DEFAULT_PREVIEW_LIMIT = 100
 MAX_PREVIEW_LIMIT = 1000
@@ -43,12 +44,23 @@ def _safe_int(value: Any, field_name: str) -> int:
         raise HTTPException(status_code=400, detail=f"{field_name} must be an integer") from exc
 
 
+def get_dataset_mount_root() -> str:
+    """Resolve dataset mount root for current runtime."""
+    env_path = os.environ.get(DATASET_MOUNT_PATH_ENV)
+    if env_path:
+        return env_path
+    if os.path.exists(DEFAULT_DOMINO_DATASET_ROOT):
+        return DEFAULT_DOMINO_DATASET_ROOT
+    return get_settings().datasets_path
+
+
 def filter_local_datasets(
     datasets: Sequence[Any],
-    local_path: str = LOCAL_DATASET_ROOT,
+    local_path: Optional[str] = None,
 ) -> list[Any]:
-    """Return only datasets that are mounted in local Domino dataset path."""
+    """Return only datasets that are mounted in the active dataset path."""
     filtered_datasets: list[Any] = []
+    resolved_local_path = local_path or get_dataset_mount_root()
 
     for ds in datasets:
         ds_name = getattr(ds, "name", None)
@@ -57,7 +69,7 @@ def filter_local_datasets(
         if not ds_name or ds_name.startswith("/") or ds_id.startswith("/"):
             continue
 
-        dataset_path = os.path.join(local_path, ds_name)
+        dataset_path = os.path.join(resolved_local_path, ds_name)
         if os.path.exists(dataset_path) or ds_id.startswith("domino:"):
             filtered_datasets.append(ds)
 
@@ -69,9 +81,12 @@ async def list_datasets_response(
 ) -> DatasetListResponse:
     """List available local datasets in API response shape."""
     datasets = await dataset_manager.list_datasets()
-    filtered_datasets = filter_local_datasets(datasets)
+    dataset_mount_root = get_dataset_mount_root()
+    filtered_datasets = filter_local_datasets(datasets, local_path=dataset_mount_root)
 
-    logger.info(f"Returning {len(filtered_datasets)} datasets (filtered from {len(datasets)})")
+    logger.info(
+        f"Returning {len(filtered_datasets)} datasets (filtered from {len(datasets)}) using root {dataset_mount_root}"
+    )
     return DatasetListResponse(datasets=filtered_datasets, total=len(filtered_datasets))
 
 
