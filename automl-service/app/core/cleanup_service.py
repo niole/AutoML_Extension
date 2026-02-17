@@ -388,7 +388,9 @@ def _delete_mlflow_runs(job_id: str) -> int:
     own storage. For local file-based MLflow, delete_run() only soft-deletes
     (marks as deleted in meta.yaml), so we additionally remove run folders and
     .trash entries from disk. _remove_mlflow_run_from_disk() is a no-op when
-    the artifact URI is non-local (e.g. https://, s3://).
+    the artifact URI is non-local (e.g. https://, s3://). After runs are
+    removed, this also attempts to delete touched non-default experiments that
+    have no active runs remaining.
     """
     try:
         from mlflow import MlflowClient
@@ -410,11 +412,26 @@ def _delete_mlflow_runs(job_id: str) -> int:
             pass  # Fall back to default experiment runs
 
         count = 0
+        touched_experiment_ids = set()
         for run in runs:
             run_id = run.info.run_id
+            experiment_id = getattr(run.info, "experiment_id", None)
+            if experiment_id is not None:
+                touched_experiment_ids.add(str(experiment_id))
             client.delete_run(run_id)
             _remove_mlflow_run_from_disk(run)
             count += 1
+
+        experiments_deleted = _delete_empty_mlflow_experiments(
+            client=client,
+            experiment_ids=touched_experiment_ids,
+        )
+        if experiments_deleted > 0:
+            logger.info(
+                "Deleted %s MLflow experiment(s) after cleaning runs for job %s",
+                experiments_deleted,
+                job_id,
+            )
         return count
     except ImportError:
         logger.debug("MLflow not available, skipping run cleanup")
@@ -462,6 +479,58 @@ def _remove_mlflow_run_from_disk(run) -> None:
                 logger.info(f"Deleted empty MLflow experiment dir: {exp_dir}")
     except Exception as e:
         logger.warning(f"Failed to remove MLflow run folder from disk: {e}")
+
+
+def _delete_empty_mlflow_experiments(client, experiment_ids: set[str]) -> int:
+    """Delete touched experiments that have no active runs left."""
+    deleted = 0
+    for experiment_id in experiment_ids:
+        exp_id = str(experiment_id)
+        if exp_id == "0":
+            # Never delete MLflow default experiment.
+            continue
+
+        try:
+            remaining_active_runs = client.search_runs(
+                experiment_ids=[exp_id],
+                max_results=1,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed checking remaining MLflow runs for experiment %s: %s",
+                exp_id,
+                e,
+            )
+            continue
+
+        if remaining_active_runs:
+            continue
+
+        try:
+            experiment = client.get_experiment(exp_id)
+        except Exception as e:
+            logger.warning(
+                "Failed fetching MLflow experiment %s for cleanup: %s",
+                exp_id,
+                e,
+            )
+            continue
+
+        if not experiment or getattr(experiment, "lifecycle_stage", "active") != "active":
+            continue
+
+        try:
+            client.delete_experiment(exp_id)
+            deleted += 1
+            logger.info("Deleted empty MLflow experiment %s", exp_id)
+        except Exception as e:
+            logger.warning(
+                "Failed to delete MLflow experiment %s after run cleanup: %s",
+                exp_id,
+                e,
+            )
+
+    return deleted
 
 
 def _count_mlflow_runs(job_id: str) -> int:
