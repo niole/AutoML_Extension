@@ -190,6 +190,7 @@ export function StorageCleanupDialog({ isOpen, onClose }: StorageCleanupDialogPr
               </h3>
               <p className="text-sm text-domino-text-secondary mt-1">
                 Review and remove orphaned artifacts not referenced by any AutoML job.
+                Pending Domino jobs and deleted data references are reconciled before each scan.
               </p>
             </div>
             <button

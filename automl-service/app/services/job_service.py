@@ -29,7 +29,17 @@ _TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCE
 _DOMINO_PENDING_STATUSES = {"submitted", "queued", "pending", "initializing", "provisioning"}
 _DOMINO_RUNNING_STATUSES = {"running", "executing"}
 _DOMINO_FAILED_STATUSES = {"failed", "error"}
-_DOMINO_CANCELLED_STATUSES = {"stopped", "cancelled", "canceled"}
+_DOMINO_CANCELLED_STATUSES = {"stopped", "cancelled", "canceled", "archived"}
+_DOMINO_MISSING_JOB_MESSAGE = "External Domino job is no longer accessible (archived or deleted)."
+_MISSING_DATA_MESSAGE = "Training data is no longer available for this job (dataset/file was deleted)."
+_DOMINO_MISSING_ERROR_MARKERS = (
+    "404",
+    "not found",
+    "does not exist",
+    "unknown run",
+    "no run",
+    "archiv",
+)
 
 
 def get_request_owner(request: Optional[Request]) -> str:
@@ -328,6 +338,7 @@ async def delete_orphans(db: AsyncSession) -> dict:
     """Delete orphaned artifacts with no matching job rows."""
     from app.core.cleanup_service import get_cleanup_service
 
+    await reconcile_jobs_for_storage_cleanup(db)
     return await get_cleanup_service().delete_orphans(db)
 
 
@@ -335,6 +346,7 @@ async def find_orphans_checked(db: AsyncSession) -> dict:
     """Preview orphaned artifacts without deleting them."""
     from app.core.cleanup_service import get_cleanup_service
 
+    await reconcile_jobs_for_storage_cleanup(db)
     return await get_cleanup_service().find_orphans_checked(db)
 
 
@@ -361,7 +373,85 @@ def _terminal_status_from_domino(status: Optional[str]) -> Optional[JobStatus]:
     return None
 
 
-async def _sync_domino_job_state(db: AsyncSession, job: Job) -> Job:
+def _is_domino_missing_error(error: Optional[str]) -> bool:
+    """Return True when Domino reports a run as missing/archived."""
+    normalized = (error or "").strip().lower()
+    if not normalized:
+        return False
+    return any(marker in normalized for marker in _DOMINO_MISSING_ERROR_MARKERS)
+
+
+def _first_dataset_file(path: str) -> Optional[str]:
+    """Return first supported dataset file under a directory."""
+    for root, _, files in os.walk(path):
+        for file_name in files:
+            if file_name.endswith((".csv", ".parquet", ".pq")):
+                return os.path.join(root, file_name)
+    return None
+
+
+async def _resolve_job_data_path(job: Job) -> Optional[str]:
+    """Resolve a job's current data path for stale-reference checks."""
+    if job.data_source == "upload":
+        return job.file_path
+
+    if job.data_source != "domino_dataset" or not job.dataset_id:
+        return None
+
+    # Storage cleanup reconciliation only validates mounted dataset refs
+    # (domino:<name>) to avoid false failures from transient API issues.
+    if not job.dataset_id.startswith("domino:"):
+        return None
+
+    dataset_name = job.dataset_id.replace("domino:", "", 1)
+    dataset_path = os.path.join(get_settings().datasets_path, dataset_name)
+    if os.path.isfile(dataset_path):
+        return dataset_path
+    if os.path.isdir(dataset_path):
+        return _first_dataset_file(dataset_path)
+    return None
+
+
+async def _mark_pending_job_failed_for_missing_data(
+    db: AsyncSession,
+    job: Job,
+) -> Optional[Job]:
+    """Fail pending jobs when their referenced source data was deleted."""
+    if job.status != JobStatus.PENDING:
+        return None
+    if job.data_source not in {"upload", "domino_dataset"}:
+        return None
+    if (
+        job.data_source == "domino_dataset"
+        and job.dataset_id
+        and not job.dataset_id.startswith("domino:")
+    ):
+        return None
+
+    data_path = await _resolve_job_data_path(job)
+    if data_path and os.path.exists(data_path):
+        return None
+
+    error_message = job.error_message or _MISSING_DATA_MESSAGE
+    updated = await crud.update_job_status(
+        db=db,
+        job_id=job.id,
+        status=JobStatus.FAILED,
+        error_message=error_message,
+        completed_at=datetime.utcnow(),
+    )
+    try:
+        await crud.add_job_log(db, job.id, error_message, "ERROR")
+    except Exception:
+        logger.exception("Failed to write missing-data sync log for job %s", job.id)
+    return updated or job
+
+
+async def _sync_domino_job_state(
+    db: AsyncSession,
+    job: Job,
+    finalize_missing: bool = False,
+) -> Job:
     """Sync local status for externally executed Domino jobs.
 
     This keeps UI state accurate when external runs fail before they can
@@ -399,6 +489,30 @@ async def _sync_domino_job_state(db: AsyncSession, job: Job) -> Job:
                 job.domino_job_id,
                 error,
             )
+        if finalize_missing and _is_domino_missing_error(error):
+            await crud.update_job_domino_fields(
+                db=db,
+                job_id=job.id,
+                domino_job_status="ArchivedOrMissing",
+            )
+            error_message = job.error_message or _DOMINO_MISSING_JOB_MESSAGE
+            updated = await crud.update_job_status(
+                db=db,
+                job_id=job.id,
+                status=JobStatus.CANCELLED,
+                error_message=error_message,
+                completed_at=datetime.utcnow(),
+            )
+            try:
+                await crud.add_job_log(
+                    db,
+                    job.id,
+                    f"{_DOMINO_MISSING_JOB_MESSAGE} Domino API error: {error}",
+                    "WARNING",
+                )
+            except Exception:
+                logger.exception("Failed to write missing-job sync log for job %s", job.id)
+            return updated or job
         return job
 
     latest_domino_status = status_result.get("domino_job_status")
@@ -469,6 +583,63 @@ async def _sync_domino_job_state(db: AsyncSession, job: Job) -> Job:
     except Exception:
         logger.exception("Failed to write terminal sync log for job %s", job.id)
     return updated or job
+
+
+async def reconcile_jobs_for_storage_cleanup(db: AsyncSession) -> dict:
+    """Reconcile stale job rows before orphan preview/cleanup actions."""
+    active_jobs = await crud.get_jobs_by_statuses(
+        db,
+        [JobStatus.PENDING, JobStatus.RUNNING],
+    )
+    if not active_jobs:
+        return {
+            "active_jobs_checked": 0,
+            "domino_jobs_checked": 0,
+            "missing_domino_jobs_finalized": 0,
+            "missing_data_jobs_finalized": 0,
+        }
+
+    active_jobs_checked = 0
+    domino_jobs_checked = 0
+    missing_domino_jobs_finalized = 0
+    missing_data_jobs_finalized = 0
+
+    for job in active_jobs:
+        active_jobs_checked += 1
+        if getattr(job, "execution_target", "local") == "domino_job":
+            domino_jobs_checked += 1
+            previous_status = job.status
+            previous_error = job.error_message
+            job = await _sync_domino_job_state(db, job, finalize_missing=True)
+            if (
+                previous_status != JobStatus.CANCELLED
+                and job.status == JobStatus.CANCELLED
+                and (job.error_message or previous_error or "") == _DOMINO_MISSING_JOB_MESSAGE
+            ):
+                missing_domino_jobs_finalized += 1
+
+        if job.status == JobStatus.PENDING and job.data_source in {"upload", "domino_dataset"}:
+            updated_job = await _mark_pending_job_failed_for_missing_data(
+                db,
+                job,
+            )
+            if updated_job is not None:
+                missing_data_jobs_finalized += 1
+
+    logger.info(
+        "Storage cleanup reconciliation complete: checked=%s domino_checked=%s "
+        "missing_domino_finalized=%s missing_data_finalized=%s",
+        active_jobs_checked,
+        domino_jobs_checked,
+        missing_domino_jobs_finalized,
+        missing_data_jobs_finalized,
+    )
+    return {
+        "active_jobs_checked": active_jobs_checked,
+        "domino_jobs_checked": domino_jobs_checked,
+        "missing_domino_jobs_finalized": missing_domino_jobs_finalized,
+        "missing_data_jobs_finalized": missing_data_jobs_finalized,
+    }
 
 
 def normalize_job_leaderboard(job: Job) -> Job:
