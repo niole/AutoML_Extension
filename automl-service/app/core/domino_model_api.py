@@ -282,25 +282,54 @@ class ModelAPIManager:
         project_id: str,
         environment_id: str,
         owner_id: Optional[str],
+        source_file: Optional[str],
+        source_function: Optional[str],
     ) -> List[Dict[str, Any]]:
         """Build payload variants for Domino version compatibility."""
         base_payload: Dict[str, Any] = {
             "name": name,
             "description": description,
-            "projectId": project_id,
             "environmentId": environment_id,
             "strictNodeAntiAffinity": False,
             "isAsync": False,
+            "environmentVariables": [],
         }
         if owner_id:
             base_payload["ownerId"] = owner_id
 
+        source_file_candidates: List[str] = []
+        if source_file:
+            source_file_candidates.append(source_file)
+            source_basename = os.path.basename(source_file)
+            if source_basename and source_basename not in source_file_candidates:
+                source_file_candidates.append(source_basename)
+        else:
+            source_file_candidates.append("model.py")
+
+        resolved_function = source_function or "predict"
+
         variants: List[Dict[str, Any]] = []
-        for environment_variables in ({}, []):
-            for version in (1, "1"):
+        for file_candidate in source_file_candidates:
+            for include_version_environment in (True, False):
+                version_payload: Dict[str, Any] = {
+                    "projectId": project_id,
+                    "source": {
+                        "type": "File",
+                        "file": file_candidate,
+                        "function": resolved_function,
+                        "excludeFiles": [],
+                    },
+                    "logHttpRequestResponse": False,
+                    "monitoringEnabled": False,
+                    "description": description,
+                    "recordInvocation": False,
+                    "shouldDeploy": False,
+                }
+                if include_version_environment:
+                    version_payload["environmentId"] = environment_id
+
                 payload = dict(base_payload)
-                payload["environmentVariables"] = environment_variables
-                payload["version"] = version
+                payload["version"] = version_payload
                 variants.append(payload)
         return variants
 
@@ -334,6 +363,8 @@ class ModelAPIManager:
         project_id: Optional[str] = None,
         owner_id: Optional[str] = None,
         environment_id: Optional[str] = None,
+        source_file: Optional[str] = None,
+        source_function: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new Model API.
 
@@ -372,6 +403,8 @@ class ModelAPIManager:
             project_id=resolved_project_id,
             environment_id=resolved_environment_id,
             owner_id=owner_id,
+            source_file=source_file,
+            source_function=source_function,
         )
 
         last_error: Optional[str] = None
@@ -446,6 +479,23 @@ class ModelVersionManager:
     def __init__(self, client: DominoModelAPIClient):
         self.client = client
 
+    def _resolve_project_id(self) -> Optional[str]:
+        """Resolve project id from settings/environment."""
+        return self.client.settings.domino_project_id or os.environ.get("DOMINO_PROJECT_ID")
+
+    @staticmethod
+    def _is_validation_shape_error(error: str) -> bool:
+        normalized = (error or "").lower()
+        return any(
+            marker in normalized
+            for marker in (
+                "json validation error",
+                "error.path.missing",
+                "error.expected",
+                "error.invalid",
+            )
+        )
+
     # ========== Model API Versions ==========
 
     async def list_model_api_versions(self, model_api_id: str) -> Dict[str, Any]:
@@ -467,15 +517,73 @@ class ModelVersionManager:
 
         POST /api/modelServing/v1/modelApis/{modelApiId}/versions
         """
-        payload = {
-            "modelFile": model_file,
-            "function": function_name,
-            "description": description,
-        }
-        if environment_id:
-            payload["environmentId"] = environment_id
+        project_id = self._resolve_project_id()
+        if not project_id:
+            return {
+                "success": False,
+                "data": [],
+                "error": (
+                    "Missing project id for Model API version creation. "
+                    "Set DOMINO_PROJECT_ID."
+                ),
+            }
 
-        return await self.client._make_request("POST", f"/api/modelServing/v1/modelApis/{model_api_id}/versions", json_data=payload)
+        resolved_function = function_name or "predict"
+        file_candidates = [model_file]
+        model_file_basename = os.path.basename(model_file)
+        if model_file_basename and model_file_basename not in file_candidates:
+            file_candidates.append(model_file_basename)
+
+        payload_variants: List[Dict[str, Any]] = []
+        for file_candidate in file_candidates:
+            for include_environment in (True, False):
+                payload: Dict[str, Any] = {
+                    "projectId": project_id,
+                    "source": {
+                        "type": "File",
+                        "file": file_candidate,
+                        "function": resolved_function,
+                        "excludeFiles": [],
+                    },
+                    "logHttpRequestResponse": False,
+                    "monitoringEnabled": False,
+                    "description": description,
+                    "recordInvocation": False,
+                    "shouldDeploy": False,
+                }
+                if include_environment and environment_id:
+                    payload["environmentId"] = environment_id
+                payload_variants.append(payload)
+
+        last_error: Optional[str] = None
+        for index, payload in enumerate(payload_variants):
+            result = await self.client._make_request(
+                "POST",
+                f"/api/modelServing/v1/modelApis/{model_api_id}/versions",
+                json_data=payload,
+            )
+            if result.get("success"):
+                return result
+
+            last_error = str(result.get("error") or "")
+            if not self._is_validation_shape_error(last_error):
+                return result
+
+            logger.warning(
+                "Model API version payload variant %s/%s rejected by Domino validation: %s",
+                index + 1,
+                len(payload_variants),
+                last_error,
+            )
+
+        return {
+            "success": False,
+            "data": [],
+            "error": (
+                "Failed to create Model API version after trying compatibility payload variants. "
+                f"Last error: {last_error or 'Unknown error'}"
+            ),
+        }
 
     async def get_model_api_version(
         self,
@@ -741,6 +849,8 @@ class DominoModelAPI:
         project_id: Optional[str] = None,
         owner_id: Optional[str] = None,
         environment_id: Optional[str] = None,
+        source_file: Optional[str] = None,
+        source_function: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new Model API."""
         return await self.model_apis.create_model_api(
@@ -749,6 +859,8 @@ class DominoModelAPI:
             project_id,
             owner_id,
             environment_id,
+            source_file,
+            source_function,
         )
 
     async def get_model_api(self, model_api_id: str) -> Dict[str, Any]:
@@ -855,6 +967,8 @@ class DominoModelAPI:
                 name=model_name,
                 description=description,
                 environment_id=environment_id,
+                source_file=model_file,
+                source_function=function_name,
             )
             if not api_result["success"]:
                 result["error"] = f"Failed to create Model API: {api_result.get('error')}"
