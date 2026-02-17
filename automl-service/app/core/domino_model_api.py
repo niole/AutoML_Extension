@@ -195,6 +195,40 @@ class DominoModelAPIClient:
             logger.error(f"Error making request to {path}: {e}")
             return {"success": False, "data": [], "error": str(e)}
 
+    async def resolve_project_default_environment_id(self, project_id: str) -> Optional[str]:
+        """Resolve project default environment id from Domino v4 project settings."""
+        if not project_id:
+            return None
+
+        settings_paths = [
+            f"/v4/projects/{project_id}/settings",
+            f"/projects/{project_id}/settings",
+        ]
+
+        seen_paths = set()
+        for path in settings_paths:
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+
+            result = await self._make_request("GET", path)
+            if not result.get("success"):
+                continue
+
+            data = result.get("data")
+            if not isinstance(data, dict):
+                continue
+
+            environment_id = data.get("defaultEnvironmentId")
+            if environment_id:
+                logger.info(
+                    "Resolved default environment id from Domino project settings "
+                    f"for project {project_id}"
+                )
+                return str(environment_id)
+
+        return None
+
 
 class ModelAPIManager:
     """Manages Model API resources (endpoint definitions)."""
@@ -206,9 +240,13 @@ class ModelAPIManager:
         """Resolve project id from request args or Domino environment."""
         return project_id or self.client.settings.domino_project_id or os.environ.get("DOMINO_PROJECT_ID")
 
-    def _resolve_environment_id(self, environment_id: Optional[str]) -> Optional[str]:
+    async def _resolve_environment_id(
+        self,
+        environment_id: Optional[str],
+        project_id: Optional[str],
+    ) -> Optional[str]:
         """Resolve environment id for model API creation."""
-        return (
+        resolved = (
             environment_id
             or os.environ.get("DOMINO_MODEL_API_ENVIRONMENT_ID")
             or self.client.settings.domino_training_environment_id
@@ -217,6 +255,12 @@ class ModelAPIManager:
             or self.client.settings.domino_eda_environment_id
             or os.environ.get("DOMINO_EDA_ENVIRONMENT_ID")
         )
+        if resolved:
+            return resolved
+
+        if project_id:
+            return await self.client.resolve_project_default_environment_id(project_id)
+        return None
 
     @staticmethod
     def _is_validation_shape_error(error: str) -> bool:
@@ -306,13 +350,17 @@ class ModelAPIManager:
                 ),
             }
 
-        resolved_environment_id = self._resolve_environment_id(environment_id)
+        resolved_environment_id = await self._resolve_environment_id(
+            environment_id=environment_id,
+            project_id=resolved_project_id,
+        )
         if not resolved_environment_id:
             return {
                 "success": False,
                 "data": [],
                 "error": (
                     "Missing environment id for Model API creation. "
+                    "Could not resolve project default environment from Domino settings. "
                     "Set DOMINO_MODEL_API_ENVIRONMENT_ID, DOMINO_TRAINING_ENVIRONMENT_ID, "
                     "or DOMINO_ENVIRONMENT_ID."
                 ),
