@@ -1,5 +1,6 @@
 """Service helpers for job route orchestration."""
 
+import asyncio
 import os
 import logging
 from datetime import datetime
@@ -23,6 +24,12 @@ from app.db import crud
 from app.workers.training_worker import register_trained_model
 
 logger = logging.getLogger(__name__)
+
+_TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+_DOMINO_PENDING_STATUSES = {"submitted", "queued", "pending", "initializing", "provisioning"}
+_DOMINO_RUNNING_STATUSES = {"running", "executing"}
+_DOMINO_FAILED_STATUSES = {"failed", "error"}
+_DOMINO_CANCELLED_STATUSES = {"stopped", "cancelled", "canceled"}
 
 
 def get_request_owner(request: Optional[Request]) -> str:
@@ -339,6 +346,131 @@ async def get_job_or_404(db: AsyncSession, job_id: str) -> Job:
     return job
 
 
+def _normalize_domino_status(status: Optional[str]) -> str:
+    """Normalize external Domino status for matching."""
+    return (status or "").strip().lower()
+
+
+def _terminal_status_from_domino(status: Optional[str]) -> Optional[JobStatus]:
+    """Map Domino terminal statuses to local JobStatus values."""
+    normalized = _normalize_domino_status(status)
+    if normalized in _DOMINO_FAILED_STATUSES:
+        return JobStatus.FAILED
+    if normalized in _DOMINO_CANCELLED_STATUSES:
+        return JobStatus.CANCELLED
+    return None
+
+
+async def _sync_domino_job_state(db: AsyncSession, job: Job) -> Job:
+    """Sync local status for externally executed Domino jobs.
+
+    This keeps UI state accurate when external runs fail before they can
+    update our local database (for example, import/runtime bootstrap errors).
+    """
+    if getattr(job, "execution_target", "local") != "domino_job":
+        return job
+    if not job.domino_job_id or job.status in _TERMINAL_JOB_STATUSES:
+        return job
+
+    try:
+        from app.core.domino_job_launcher import get_domino_job_launcher
+
+        status_result = await asyncio.wait_for(
+            asyncio.to_thread(get_domino_job_launcher().get_job_status, job.domino_job_id),
+            timeout=8.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Timed out polling Domino status for job %s (domino id %s)",
+            job.id,
+            job.domino_job_id,
+        )
+        return job
+    except Exception:
+        logger.exception("Failed to poll Domino status for job %s", job.id)
+        return job
+
+    if not status_result.get("success"):
+        error = status_result.get("error")
+        if error:
+            logger.warning(
+                "Domino status poll failed for job %s (domino id %s): %s",
+                job.id,
+                job.domino_job_id,
+                error,
+            )
+        return job
+
+    latest_domino_status = status_result.get("domino_job_status")
+    normalized = _normalize_domino_status(latest_domino_status)
+
+    if latest_domino_status and latest_domino_status != job.domino_job_status:
+        await crud.update_job_domino_fields(
+            db=db,
+            job_id=job.id,
+            domino_job_status=latest_domino_status,
+        )
+        job.domino_job_status = latest_domino_status
+
+    # Promote pending -> running based on external execution signal.
+    if normalized in _DOMINO_RUNNING_STATUSES and job.status == JobStatus.PENDING:
+        updated = await crud.update_job_status(
+            db=db,
+            job_id=job.id,
+            status=JobStatus.RUNNING,
+            started_at=job.started_at or datetime.utcnow(),
+        )
+        return updated or job
+
+    # Keep pending state for queued/submitted external jobs.
+    if normalized in _DOMINO_PENDING_STATUSES:
+        return job
+
+    terminal_status = _terminal_status_from_domino(latest_domino_status)
+    if not terminal_status:
+        return job
+
+    if terminal_status == JobStatus.FAILED:
+        error_message = job.error_message or (
+            f"External Domino job ended with status: {latest_domino_status}. "
+            "Check Domino run logs for details."
+        )
+        updated = await crud.update_job_status(
+            db=db,
+            job_id=job.id,
+            status=JobStatus.FAILED,
+            error_message=error_message,
+            completed_at=datetime.utcnow(),
+        )
+        try:
+            await crud.add_job_log(
+                db,
+                job.id,
+                f"External Domino job ended with status: {latest_domino_status}",
+                "ERROR",
+            )
+        except Exception:
+            logger.exception("Failed to write terminal sync log for job %s", job.id)
+        return updated or job
+
+    updated = await crud.update_job_status(
+        db=db,
+        job_id=job.id,
+        status=JobStatus.CANCELLED,
+        completed_at=datetime.utcnow(),
+    )
+    try:
+        await crud.add_job_log(
+            db,
+            job.id,
+            f"External Domino job ended with status: {latest_domino_status}",
+            "WARNING",
+        )
+    except Exception:
+        logger.exception("Failed to write terminal sync log for job %s", job.id)
+    return updated or job
+
+
 def normalize_job_leaderboard(job: Job) -> Job:
     """Normalize legacy leaderboard payloads for API compatibility."""
     if job.leaderboard and isinstance(job.leaderboard, dict) and "models" in job.leaderboard:
@@ -348,7 +480,9 @@ def normalize_job_leaderboard(job: Job) -> Job:
 
 async def get_job_response(db: AsyncSession, job_id: str) -> Job:
     """Get job payload normalized for API response compatibility."""
-    return normalize_job_leaderboard(await get_job_or_404(db, job_id))
+    job = await get_job_or_404(db, job_id)
+    job = await _sync_domino_job_state(db, job)
+    return normalize_job_leaderboard(job)
 
 
 def extract_metrics_leaderboard(job: Job) -> Optional[list[dict]]:
@@ -365,6 +499,7 @@ def extract_metrics_leaderboard(job: Job) -> Optional[list[dict]]:
 async def get_job_status_response(db: AsyncSession, job_id: str) -> JobStatusResponse:
     """Build status response payload for a job."""
     job = await get_job_or_404(db, job_id)
+    job = await _sync_domino_job_state(db, job)
     return JobStatusResponse(
         id=job.id,
         status=job.status.value,
@@ -387,6 +522,7 @@ async def get_job_metrics_response(db: AsyncSession, job_id: str) -> JobMetricsR
 async def get_job_progress_response(db: AsyncSession, job_id: str) -> JobProgressResponse:
     """Build progress response payload for a job."""
     job = await get_job_or_404(db, job_id)
+    job = await _sync_domino_job_state(db, job)
     return JobProgressResponse(
         id=job.id,
         status=job.status.value,

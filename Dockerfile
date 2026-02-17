@@ -238,9 +238,11 @@ RUN mkdir -p /mnt/data /mnt/artifacts /mnt/code /mnt/imported/data \
 
 # Copy requirements file if exists (for custom dependencies)
 COPY --chown=domino:domino requirements.txt* /app/
+COPY --chown=domino:domino automl-service/requirements.txt /app/automl-service-requirements.txt
 
 # Install any additional requirements if file exists
 RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+RUN pip install -r /app/automl-service-requirements.txt
 
 # Set environment variables for Domino
 ENV DOMINO_WORKING_DIR=/mnt/code \
