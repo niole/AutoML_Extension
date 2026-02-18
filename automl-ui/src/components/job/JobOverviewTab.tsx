@@ -15,6 +15,8 @@ export function JobOverviewTab({ job, isLoading, currentStatus, currentDominoSta
   const datasetLabel = getDatasetLabel(job, isLoading)
   const datasetLink = getDatasetLink(job)
   const datasetDetails = job?.file_path || job?.dataset_id || ''
+  const dominoJobUrl = toDominoTenantUrl(job?.domino_job_url)
+  const experimentUrl = toDominoTenantUrl(job?.experiment_run_url)
 
   return (
     <div>
@@ -76,9 +78,9 @@ export function JobOverviewTab({ job, isLoading, currentStatus, currentDominoSta
             />
             {job?.domino_job_id && (
               <MetadataRow label="Domino Job ID" mono>
-                {job.domino_job_url ? (
+                {dominoJobUrl ? (
                   <a
-                    href={job.domino_job_url}
+                    href={dominoJobUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="text-domino-accent-purple hover:underline break-all"
@@ -99,9 +101,9 @@ export function JobOverviewTab({ job, isLoading, currentStatus, currentDominoSta
             )}
             {(job?.experiment_id || job?.experiment_run_id) && (
               <MetadataRow label="Experiment ID" mono>
-                {job.experiment_run_url ? (
+                {experimentUrl ? (
                   <a
-                    href={job.experiment_run_url}
+                    href={experimentUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="text-domino-accent-purple hover:underline break-all"
@@ -211,4 +213,17 @@ function getDatasetLink(job: Job | undefined): string | null {
 function getFileName(path: string): string {
   const segments = path.split('/')
   return segments[segments.length - 1] || path
+}
+
+function toDominoTenantUrl(rawUrl?: string): string | null {
+  if (!rawUrl) return null
+  try {
+    const url = new URL(rawUrl, window.location.origin)
+    if (url.hostname.startsWith('apps.')) {
+      url.hostname = url.hostname.slice('apps.'.length)
+    }
+    return url.toString()
+  } catch {
+    return rawUrl
+  }
 }

@@ -5,7 +5,7 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, urlunparse
 
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -86,6 +86,51 @@ def get_project_context() -> tuple[Optional[str], Optional[str]]:
     )
 
 
+def _normalize_domino_ui_host(raw: Optional[str]) -> Optional[str]:
+    """Normalize a configured Domino host into a UI-safe base URL."""
+    if not raw:
+        return None
+    candidate = raw.strip()
+    if not candidate:
+        return None
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+
+    hostname = (parsed.hostname or "").strip()
+    if not hostname:
+        return None
+
+    # Domino UI links should resolve to tenant root, not apps subdomain.
+    if hostname.startswith("apps."):
+        hostname = hostname[len("apps.") :]
+
+    if not hostname:
+        return None
+
+    netloc = f"{hostname}:{parsed.port}" if parsed.port else hostname
+    return urlunparse((parsed.scheme, netloc, "", "", "", ""))
+
+
+def _resolve_domino_ui_host() -> Optional[str]:
+    """Resolve preferred Domino tenant host for user-facing links."""
+    settings = get_settings()
+    for raw in (
+        os.environ.get("DOMINO_USER_HOST"),
+        os.environ.get("DOMINO_EXTERNAL_HOST"),
+        os.environ.get("DOMINO_LINK_HOST"),
+        settings.domino_api_host,
+        os.environ.get("DOMINO_API_HOST"),
+    ):
+        normalized = _normalize_domino_ui_host(raw)
+        if normalized:
+            return normalized.rstrip("/")
+    return None
+
+
 def _resolve_project_owner() -> Optional[str]:
     """Resolve Domino project owner for project-scoped UI links."""
     settings = get_settings()
@@ -122,7 +167,9 @@ def _build_domino_job_url(job: Job) -> Optional[str]:
     encoded_owner = quote(owner, safe="")
     encoded_project = quote(project_name, safe="")
     encoded_run_id = quote(job.domino_job_id, safe="")
-    return f"/jobs/{encoded_owner}/{encoded_project}/{encoded_run_id}/logs?status=all"
+    path = f"/jobs/{encoded_owner}/{encoded_project}/{encoded_run_id}/logs?status=all"
+    host = _resolve_domino_ui_host()
+    return f"{host}{path}" if host else path
 
 
 def _resolve_experiment_id(job: Job) -> Optional[str]:
@@ -182,7 +229,9 @@ def _build_experiment_run_url(job: Job, experiment_id: Optional[str]) -> Optiona
     encoded_owner = quote(owner, safe="")
     encoded_project = quote(project_name, safe="")
     encoded_experiment_id = quote(str(experiment_id), safe="")
-    return f"/experiments/{encoded_owner}/{encoded_project}/{encoded_experiment_id}"
+    path = f"/experiments/{encoded_owner}/{encoded_project}/{encoded_experiment_id}"
+    host = _resolve_domino_ui_host()
+    return f"{host}{path}" if host else path
 
 
 def _attach_external_links(job: Job) -> Job:
