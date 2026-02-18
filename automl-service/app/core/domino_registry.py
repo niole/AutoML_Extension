@@ -15,43 +15,52 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-class AutoGluonTabularWrapper(mlflow.pyfunc.PythonModel):
-    """MLflow PythonModel wrapper for AutoGluon TabularPredictor.
+def _build_pyfunc_wrapper(model_type: str) -> mlflow.pyfunc.PythonModel:
+    """Build a pyfunc wrapper using a local class for pickle portability.
 
-    This allows the model to be loaded and used via MLflow's pyfunc interface.
+    Defining the class in local scope makes cloudpickle serialize it by value
+    instead of by module reference (`app.core...`). This avoids import errors
+    when loading the model in Domino serving runtimes that don't ship this
+    codebase.
     """
+    if model_type == "timeseries":
+        class AutoGluonTimeSeriesWrapper(mlflow.pyfunc.PythonModel):
+            """MLflow PythonModel wrapper for AutoGluon TimeSeriesPredictor."""
 
-    def load_context(self, context):
-        """Load the AutoGluon model from artifacts."""
-        from autogluon.tabular import TabularPredictor
-        self.predictor = TabularPredictor.load(context.artifacts["model_path"])
+            def load_context(self, context):
+                """Load the AutoGluon model from artifacts."""
+                from autogluon.timeseries import TimeSeriesPredictor
+                self.predictor = TimeSeriesPredictor.load(context.artifacts["model_path"])
 
-    def predict(self, context, model_input):
-        """Make predictions using the loaded model."""
-        predictions = self.predictor.predict(model_input)
-        try:
-            probabilities = self.predictor.predict_proba(model_input)
-            return {
-                "predictions": predictions.tolist(),
-                "probabilities": probabilities.to_dict('records')
-            }
-        except Exception:
-            # For regression or when probabilities aren't available
-            return {"predictions": predictions.tolist()}
+            def predict(self, context, model_input):
+                """Make predictions using the loaded model."""
+                predictions = self.predictor.predict(model_input)
+                return {"predictions": predictions.to_dict('records')}
 
+        return AutoGluonTimeSeriesWrapper()
 
-class AutoGluonTimeSeriesWrapper(mlflow.pyfunc.PythonModel):
-    """MLflow PythonModel wrapper for AutoGluon TimeSeriesPredictor."""
+    class AutoGluonTabularWrapper(mlflow.pyfunc.PythonModel):
+        """MLflow PythonModel wrapper for AutoGluon TabularPredictor."""
 
-    def load_context(self, context):
-        """Load the AutoGluon model from artifacts."""
-        from autogluon.timeseries import TimeSeriesPredictor
-        self.predictor = TimeSeriesPredictor.load(context.artifacts["model_path"])
+        def load_context(self, context):
+            """Load the AutoGluon model from artifacts."""
+            from autogluon.tabular import TabularPredictor
+            self.predictor = TabularPredictor.load(context.artifacts["model_path"])
 
-    def predict(self, context, model_input):
-        """Make predictions using the loaded model."""
-        predictions = self.predictor.predict(model_input)
-        return {"predictions": predictions.to_dict('records')}
+        def predict(self, context, model_input):
+            """Make predictions using the loaded model."""
+            predictions = self.predictor.predict(model_input)
+            try:
+                probabilities = self.predictor.predict_proba(model_input)
+                return {
+                    "predictions": predictions.tolist(),
+                    "probabilities": probabilities.to_dict('records')
+                }
+            except Exception:
+                # For regression or when probabilities aren't available
+                return {"predictions": predictions.tolist()}
+
+    return AutoGluonTabularWrapper()
 
 
 class DominoModelRegistry:
@@ -189,11 +198,9 @@ class DominoModelRegistry:
                     for key, value in tags.items():
                         mlflow.set_tag(key, str(value))
 
-                # Create the appropriate wrapper class based on model type
-                if model_type == "timeseries":
-                    wrapper_class = AutoGluonTimeSeriesWrapper
-                else:
-                    wrapper_class = AutoGluonTabularWrapper
+                # Use a local-class wrapper so the serialized pyfunc does not
+                # require importing this service module in serving environments.
+                wrapper_model = _build_pyfunc_wrapper(model_type)
 
                 # Use run artifacts + explicit model registration to stay compatible
                 # with tracking servers that don't support logged-model artifact uploads.
@@ -201,7 +208,7 @@ class DominoModelRegistry:
                     local_model_dir = os.path.join(tmp_dir, "model")
                     mlflow.pyfunc.save_model(
                         path=local_model_dir,
-                        python_model=wrapper_class(),
+                        python_model=wrapper_model,
                         artifacts={"model_path": model_path},
                         conda_env=conda_env,
                     )
