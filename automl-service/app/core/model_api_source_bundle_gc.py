@@ -73,24 +73,44 @@ class ModelApiSourceBundleGC:
         self._run_lock = asyncio.Lock()
 
     @staticmethod
+    def _project_root() -> Path:
+        """Return AutoML_Extension repository root path."""
+        return Path(__file__).resolve().parents[3]
+
+    @staticmethod
     def bundle_root() -> Path:
         """Return absolute root directory for staged model-api source bundles."""
-        service_root = Path(__file__).resolve().parents[2]
-        return (service_root / "automl_model_api_sources").resolve()
+        return (ModelApiSourceBundleGC._project_root() / "automl_model_api_sources").resolve()
 
     @staticmethod
     def legacy_bundle_root() -> Path:
         """Return legacy hidden root used by earlier bundle staging logic."""
+        return (ModelApiSourceBundleGC._project_root() / ".automl_model_api_sources").resolve()
+
+    @staticmethod
+    def deprecated_service_bundle_roots() -> tuple[Path, Path]:
+        """Return historical incorrect roots under automl-service for cleanup only."""
         service_root = Path(__file__).resolve().parents[2]
-        return (service_root / ".automl_model_api_sources").resolve()
+        return (
+            (service_root / "automl_model_api_sources").resolve(),
+            (service_root / ".automl_model_api_sources").resolve(),
+        )
 
     def _allowed_bundle_roots(self) -> tuple[Path, ...]:
         """Return allowed bundle roots for path normalization and cleanup."""
         current = self.bundle_root()
         legacy = self.legacy_bundle_root()
-        if legacy == current:
-            return (current,)
-        return (current, legacy)
+        deprecated = self.deprecated_service_bundle_roots()
+        roots: list[Path] = [current, legacy, *deprecated]
+
+        unique_roots: list[Path] = []
+        seen: set[Path] = set()
+        for root in roots:
+            if root in seen:
+                continue
+            seen.add(root)
+            unique_roots.append(root)
+        return tuple(unique_roots)
 
     def bundle_dir_for_job(self, job_id: str) -> Path:
         """Return absolute bundle directory path for a training job id."""
