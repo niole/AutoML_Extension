@@ -195,6 +195,60 @@ class DominoModelAPIClient:
             logger.error(f"Error making request to {path}: {e}")
             return {"success": False, "data": [], "error": str(e)}
 
+    async def _make_text_request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Make an authenticated request when endpoint response is plain text."""
+        try:
+            client = await self._get_client()
+            auth_headers = await self._get_auth_headers()
+        except ValueError as e:
+            logger.warning(f"Domino API not configured: {e}")
+            return {"success": False, "error": str(e)}
+
+        try:
+            request_headers: Dict[str, str] = {
+                **auth_headers,
+                "Accept": "text/plain, application/json;q=0.9, */*;q=0.8",
+            }
+            response = await client.request(
+                method=method,
+                url=path,
+                params=params,
+                headers=request_headers,
+            )
+
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type:
+                error_message = self._extract_error(response)
+                logger.error(
+                    "Received HTML response from Domino API for %s: %s",
+                    path,
+                    error_message,
+                )
+                return {
+                    "success": False,
+                    "error": error_message,
+                    "status_code": response.status_code,
+                }
+
+            response.raise_for_status()
+            return {"success": True, "text": response.text}
+        except httpx.HTTPStatusError as e:
+            error_message = self._extract_error(e.response)
+            logger.error(f"Domino API HTTP error for {path}: {error_message}")
+            return {
+                "success": False,
+                "error": error_message,
+                "status_code": e.response.status_code,
+            }
+        except Exception as e:
+            logger.error(f"Error making text request to {path}: {e}")
+            return {"success": False, "error": str(e)}
+
     async def resolve_project_default_environment_id(self, project_id: str) -> Optional[str]:
         """Resolve project default environment id from Domino v4 project settings."""
         if not project_id:
@@ -606,16 +660,13 @@ class ModelVersionManager:
 
         GET /api/modelServing/v1/modelApis/{modelApiId}/versions/{versionId}/buildLogs
         """
-        try:
-            client = await self.client._get_client()
-            response = await client.get(
-                f"/api/modelServing/v1/modelApis/{model_api_id}/versions/{version_id}/buildLogs"
-            )
-            response.raise_for_status()
-            return {"success": True, "logs": response.text}
-        except Exception as e:
-            logger.error(f"Error getting build logs: {e}")
-            return {"success": False, "error": str(e)}
+        result = await self.client._make_text_request(
+            "GET",
+            f"/api/modelServing/v1/modelApis/{model_api_id}/versions/{version_id}/buildLogs",
+        )
+        if not result.get("success"):
+            return result
+        return {"success": True, "logs": result.get("text", "")}
 
 
 class ModelDeploymentManager:
@@ -762,16 +813,13 @@ class ModelDeploymentManager:
 
         logSuffix can be 'stdout', 'stderr', etc.
         """
-        try:
-            client = await self.client._get_client()
-            response = await client.get(
-                f"/api/modelServing/v1/modelDeployments/{deployment_id}/logs/{log_suffix}"
-            )
-            response.raise_for_status()
-            return {"success": True, "logs": response.text}
-        except Exception as e:
-            logger.error(f"Error getting deployment logs: {e}")
-            return {"success": False, "error": str(e)}
+        result = await self.client._make_text_request(
+            "GET",
+            f"/api/modelServing/v1/modelDeployments/{deployment_id}/logs/{log_suffix}",
+        )
+        if not result.get("success"):
+            return result
+        return {"success": True, "logs": result.get("text", "")}
 
     async def get_deployment_versions(self, deployment_id: str) -> Dict[str, Any]:
         """Get all versions of a Model Deployment.
