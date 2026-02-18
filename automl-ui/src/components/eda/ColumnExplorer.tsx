@@ -5,6 +5,7 @@ import {
 } from '@heroicons/react/24/outline'
 import Dropdown from '../common/Dropdown'
 import type { ColumnProfile } from '../../types/profiling'
+import { formatCompactNumber } from '../../utils/formatters'
 
 interface ColumnExplorerProps {
   columns: ColumnProfile[]
@@ -296,17 +297,6 @@ export function ColumnExplorer({ columns, filePath: _filePath }: ColumnExplorerP
   )
 }
 
-// Format number to avoid scientific notation
-function formatNumber(num: number): string {
-  if (num === undefined || num === null || isNaN(num)) return '0'
-  const abs = Math.abs(num)
-  if (abs >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-  if (abs >= 1000) return (num / 1000).toFixed(1) + 'K'
-  if (abs < 0.01 && abs > 0) return num.toFixed(4)
-  if (Number.isInteger(num)) return num.toLocaleString()
-  return num.toFixed(2)
-}
-
 // Simple histogram component using divs with axis labels
 function SimpleHistogram({ counts, binEdges }: { counts: number[]; binEdges: number[] }) {
   const maxCount = Math.max(...counts)
@@ -318,7 +308,7 @@ function SimpleHistogram({ counts, binEdges }: { counts: number[]; binEdges: num
       {/* Y-axis label */}
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs text-domino-text-muted">Count</span>
-        <span className="text-xs text-domino-text-secondary">max: {formatNumber(maxCount)}</span>
+        <span className="text-xs text-domino-text-secondary">max: {formatCompactNumber(maxCount)}</span>
       </div>
 
       {/* Chart */}
@@ -330,10 +320,10 @@ function SimpleHistogram({ counts, binEdges }: { counts: number[]; binEdges: num
               key={idx}
               className="flex-1 bg-domino-accent-purple hover:bg-domino-accent-purple/80 transition-colors rounded-t cursor-pointer group relative"
               style={{ height: `${height}%`, minHeight: count > 0 ? '4px' : '0' }}
-              title={`${formatNumber(binEdges[idx])} - ${formatNumber(binEdges[idx + 1])}: ${count.toLocaleString()}`}
+              title={`${formatCompactNumber(binEdges[idx])} - ${formatCompactNumber(binEdges[idx + 1])}: ${count.toLocaleString()}`}
             >
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 pointer-events-none">
-                {formatNumber(binEdges[idx])} - {formatNumber(binEdges[idx + 1])}<br/>
+                {formatCompactNumber(binEdges[idx])} - {formatCompactNumber(binEdges[idx + 1])}<br/>
                 {count.toLocaleString()} values
               </div>
             </div>
@@ -343,9 +333,9 @@ function SimpleHistogram({ counts, binEdges }: { counts: number[]; binEdges: num
 
       {/* X-axis labels */}
       <div className="flex justify-between mt-2 text-xs text-domino-text-muted">
-        <span>{formatNumber(minEdge)}</span>
+        <span>{formatCompactNumber(minEdge)}</span>
         <span className="text-domino-text-secondary">Value Range</span>
-        <span>{formatNumber(maxEdge)}</span>
+        <span>{formatCompactNumber(maxEdge)}</span>
       </div>
     </div>
   )

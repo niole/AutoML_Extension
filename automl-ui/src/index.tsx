@@ -3,9 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './styles/globals.css'
 
-console.log('[AutoML] index.tsx executing')
-console.log('[AutoML] Pathname:', window.location.pathname)
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -22,4 +19,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 
 // NOTE: __APP_LOADED__ is now set in Layout.tsx useEffect
-console.log('[AutoML] React render() called, waiting for Layout mount...')

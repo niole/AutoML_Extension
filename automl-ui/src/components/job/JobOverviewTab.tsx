@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Badge from '../common/Badge'
 import type { Job, JobStatus } from '../../types/job'
 import { formatDuration } from '../../utils/formatters'
+import { getFileName } from '../../utils/path'
 
 interface JobOverviewTabProps {
   job: Job | undefined
@@ -208,11 +209,6 @@ function getDatasetLink(job: Job | undefined): string | null {
   if (job.file_path) params.set('file_path', job.file_path)
   const query = params.toString()
   return query ? `/eda?${query}` : null
-}
-
-function getFileName(path: string): string {
-  const segments = path.split('/')
-  return segments[segments.length - 1] || path
 }
 
 function toDominoTenantUrl(rawUrl?: string): string | null {

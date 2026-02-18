@@ -1,9 +1,5 @@
 import type { DataProfile, TimeSeriesProfile } from '../types/profiling'
-
-interface TransformConfig {
-  column: string
-  type: 'fillna' | 'scale' | 'encode' | 'drop' | 'log' | 'clip'
-}
+import type { TransformConfig } from '../types/eda'
 
 // --- Cell helpers ---
 

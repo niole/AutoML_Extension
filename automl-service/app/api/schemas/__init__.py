@@ -16,8 +16,6 @@ from app.api.schemas.dataset import (
 from app.api.schemas.model import (
     RegisteredModelResponse,
     ModelVersionResponse,
-    DeployModelRequest,
-    DeploymentResponse,
 )
 
 __all__ = [
@@ -32,6 +30,4 @@ __all__ = [
     "FileUploadResponse",
     "RegisteredModelResponse",
     "ModelVersionResponse",
-    "DeployModelRequest",
-    "DeploymentResponse",
 ]

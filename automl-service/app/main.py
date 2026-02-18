@@ -13,7 +13,7 @@ from app.api.compat_routes import register_compat_routes
 from app.config import get_settings
 from app.core.websocket_manager import get_websocket_manager
 from app.db.database import create_tables
-from app.api.routes import health, jobs, datasets, models, predictions, profiling, registry, export, deployments
+from app.api.routes import health, jobs, datasets, predictions, profiling, registry, export, deployments
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,13 +79,9 @@ async def lifespan(app: FastAPI):
     from app.core.job_queue import get_job_queue
     queue = get_job_queue()
     await queue.startup()
-    from app.core.model_api_source_bundle_gc import get_model_api_source_bundle_gc
-    bundle_gc = get_model_api_source_bundle_gc()
-    await bundle_gc.startup()
 
     yield
 
-    await bundle_gc.shutdown()
     await queue.shutdown(timeout=30.0)
     logger.info("Shutting down application")
 
@@ -128,7 +124,6 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/svc/v1/health", tags=["Health"])
     app.include_router(jobs.router, prefix="/svc/v1/jobs", tags=["Jobs"])
     app.include_router(datasets.router, prefix="/svc/v1/datasets", tags=["Datasets"])
-    app.include_router(models.router, prefix="/svc/v1/models", tags=["Models"])
     app.include_router(predictions.router, prefix="/svc/v1/predictions", tags=["Predictions"])
     app.include_router(profiling.router, prefix="/svc/v1/profiling", tags=["Profiling"])
     app.include_router(registry.router, prefix="/svc/v1/registry", tags=["Registry"])

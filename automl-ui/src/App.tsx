@@ -13,7 +13,6 @@ function NoRouteMatch() {
   const location = useLocation()
 
   useEffect(() => {
-    console.error('[AutoML] No route matched:', location.pathname)
     window.__APP_LOADED__ = true
     if (window.__APP_LOAD_TIMEOUT__) {
       clearTimeout(window.__APP_LOAD_TIMEOUT__)
@@ -37,7 +36,6 @@ function NoRouteMatch() {
 
 function App() {
   const basename = getBasePath()
-  console.log('[AutoML] App rendering, basename:', basename || '(empty)')
 
   return (
     <ErrorBoundary>

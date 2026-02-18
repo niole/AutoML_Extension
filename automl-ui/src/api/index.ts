@@ -13,29 +13,13 @@ declare global {
 const DOMINO_MODE = true
 
 /**
- * Convert an endpoint name to a Domino-safe single-segment path.
- *
- * Convention: strip slashes, take the last segment, prepend "svc".
- *   "health"       -> "svchealth"
- *   "jobcreate"    -> "svcjobcreate"
- *   "health/user"  -> "svcuser"
- *
- * For the rare cases where the endpoint name does NOT follow the convention
- * (e.g. a typo in the caller vs. backend), use ENDPOINT_OVERRIDES.
+ * Convert an endpoint name to Domino single-segment compat paths.
  */
-const ENDPOINT_OVERRIDES: Record<string, string> = {
-  // Key typed as "modenapicreate" in callers but backend route is "svcmodelapicreate"
-  'modenapicreate': 'svcmodelapicreate',
-}
-
 function toDominoPath(endpoint: string): string {
-  if (ENDPOINT_OVERRIDES[endpoint]) {
-    return ENDPOINT_OVERRIDES[endpoint]
-  }
-  // Take the last path segment (handles "health/user" -> "user")
-  const segments = endpoint.split('/')
-  const lastSegment = segments[segments.length - 1]
-  return `svc${lastSegment}`
+  const normalized = endpoint.replace(/^\/+|\/+$/g, '')
+  if (!normalized) return 'svc'
+  const lastSegment = normalized.split('/').filter(Boolean).pop() || normalized
+  return `svc${lastSegment.replace(/-/g, '')}`
 }
 
 // Fetch-based API client
@@ -97,9 +81,7 @@ class ApiClient {
     }
 
     try {
-      console.log(`[API] ${method} ${fullUrl}`)
       const response = await fetch(fullUrl, fetchConfig)
-      console.log(`[API] Response status: ${response.status}, content-type: ${response.headers.get('content-type')}`)
 
       if (!response.ok) {
         // Check if response is HTML (common when Domino intercepts)

@@ -7,20 +7,17 @@ Provides API endpoints to:
 - View deployment logs and status
 """
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.domino_model_api import get_domino_model_api
-from app.core.model_api_source_bundle_gc import get_model_api_source_bundle_gc
 from app.services.deployment_service import (
     list_deployments_safe,
     list_model_apis_safe,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -130,16 +127,6 @@ async def delete_model_api(model_api_id: str):
 
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result.get("error"))
-
-    # Best-effort cleanup of local staged source bundle tracking.
-    try:
-        await get_model_api_source_bundle_gc().on_model_api_deleted(model_api_id)
-    except Exception as exc:
-        logger.warning(
-            "Model API %s deleted in Domino but local bundle cleanup failed: %s",
-            model_api_id,
-            exc,
-        )
 
     return result
 

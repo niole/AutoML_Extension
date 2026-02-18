@@ -27,6 +27,17 @@ export function formatNumber(num: number, decimals = 2): string {
   return num.toFixed(decimals)
 }
 
+export function formatCompactNumber(num: number | null | undefined): string {
+  if (num === null || num === undefined || Number.isNaN(num)) return '-'
+  const abs = Math.abs(num)
+  if (abs >= 1e9) return (num / 1e9).toFixed(2) + 'B'
+  if (abs >= 1e6) return (num / 1e6).toFixed(2) + 'M'
+  if (abs >= 1e3) return num.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  if (abs < 0.001 && abs > 0) return num.toExponential(2)
+  if (Number.isInteger(num)) return num.toLocaleString()
+  return num.toFixed(4)
+}
+
 export function getStatusColor(status: string): string {
   switch (status?.toLowerCase()) {
     case 'completed':

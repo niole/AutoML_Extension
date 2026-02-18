@@ -5,7 +5,6 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
-from urllib.parse import quote, urlparse, urlunparse
 
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +23,7 @@ from app.config import get_settings
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.db import crud
+from app.services.job_links import attach_external_links
 from app.workers.training_worker import register_trained_model
 
 logger = logging.getLogger(__name__)
@@ -86,158 +86,9 @@ def get_project_context() -> tuple[Optional[str], Optional[str]]:
     )
 
 
-def _normalize_domino_ui_host(raw: Optional[str]) -> Optional[str]:
-    """Normalize a configured Domino host into a UI-safe base URL."""
-    if not raw:
-        return None
-    candidate = raw.strip()
-    if not candidate:
-        return None
-    if "://" not in candidate:
-        candidate = f"https://{candidate}"
-
-    parsed = urlparse(candidate)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return None
-
-    hostname = (parsed.hostname or "").strip()
-    if not hostname:
-        return None
-
-    # Domino UI links should resolve to tenant root, not apps subdomain.
-    if hostname.startswith("apps."):
-        hostname = hostname[len("apps.") :]
-
-    if not hostname:
-        return None
-
-    netloc = f"{hostname}:{parsed.port}" if parsed.port else hostname
-    return urlunparse((parsed.scheme, netloc, "", "", "", ""))
-
-
-def _resolve_domino_ui_host() -> Optional[str]:
-    """Resolve preferred Domino tenant host for user-facing links."""
-    for raw in (
-        os.environ.get("DOMINO_USER_HOST"),
-        os.environ.get("DOMINO_EXTERNAL_HOST"),
-        os.environ.get("DOMINO_LINK_HOST"),
-    ):
-        normalized = _normalize_domino_ui_host(raw)
-        if normalized:
-            return normalized.rstrip("/")
-    return None
-
-
-def _resolve_project_owner() -> Optional[str]:
-    """Resolve Domino project owner for project-scoped UI links."""
-    settings = get_settings()
-    owner = settings.domino_project_owner or os.environ.get("DOMINO_PROJECT_OWNER")
-    if not owner:
-        return None
-    owner = owner.strip()
-    return owner or None
-
-
-def _resolve_project_name(job: Job) -> Optional[str]:
-    """Resolve Domino project name preferring job metadata, then environment."""
-    if job.project_name and job.project_name.strip():
-        return job.project_name.strip()
-
-    settings = get_settings()
-    project_name = settings.domino_project_name or os.environ.get("DOMINO_PROJECT_NAME")
-    if not project_name:
-        return None
-    project_name = project_name.strip()
-    return project_name or None
-
-
-def _build_domino_job_url(job: Job) -> Optional[str]:
-    """Build canonical Domino run URL for a job id when context is available."""
-    if not job.domino_job_id:
-        return None
-
-    owner = _resolve_project_owner()
-    project_name = _resolve_project_name(job)
-    if not owner or not project_name:
-        return None
-
-    encoded_owner = quote(owner, safe="")
-    encoded_project = quote(project_name, safe="")
-    encoded_run_id = quote(job.domino_job_id, safe="")
-    path = f"/jobs/{encoded_owner}/{encoded_project}/{encoded_run_id}/logs?status=all"
-    host = _resolve_domino_ui_host()
-    return f"{host}{path}" if host else path
-
-
-def _resolve_experiment_id(job: Job) -> Optional[str]:
-    """Best-effort experiment-id lookup for the job's MLflow run."""
-    run_id = (job.experiment_run_id or "").strip()
-    experiment_name = (job.experiment_name or "").strip()
-    if not run_id and not experiment_name:
-        return None
-
-    try:
-        import mlflow
-    except Exception:
-        logger.debug("MLflow unavailable while resolving experiment id for job %s", job.id)
-        return None
-
-    tracking_uri = get_settings().mlflow_tracking_uri or os.environ.get("MLFLOW_TRACKING_URI")
-    try:
-        client = (
-            mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
-            if tracking_uri
-            else mlflow.tracking.MlflowClient()
-        )
-    except Exception:
-        logger.debug("Failed creating MLflow client while resolving experiment id for job %s", job.id)
-        return None
-
-    if run_id:
-        try:
-            run = client.get_run(run_id)
-            run_experiment_id = getattr(run.info, "experiment_id", None)
-            if run_experiment_id:
-                return str(run_experiment_id)
-        except Exception:
-            logger.debug("Failed to resolve experiment id from run id for job %s", job.id)
-
-    if experiment_name:
-        try:
-            experiment = client.get_experiment_by_name(experiment_name)
-            if experiment and getattr(experiment, "experiment_id", None):
-                return str(experiment.experiment_id)
-        except Exception:
-            logger.debug("Failed to resolve experiment id from name for job %s", job.id)
-
-    return None
-
-
-def _build_experiment_run_url(job: Job, experiment_id: Optional[str]) -> Optional[str]:
-    """Build deep link to Domino Experiment Manager."""
-    if not experiment_id:
-        return None
-
-    owner = _resolve_project_owner()
-    project_name = _resolve_project_name(job)
-    if not owner or not project_name:
-        return None
-
-    encoded_owner = quote(owner, safe="")
-    encoded_project = quote(project_name, safe="")
-    encoded_experiment_id = quote(str(experiment_id), safe="")
-    path = f"/experiments/{encoded_owner}/{encoded_project}/{encoded_experiment_id}"
-    host = _resolve_domino_ui_host()
-    return f"{host}{path}" if host else path
-
-
 def _attach_external_links(job: Job) -> Job:
     """Attach computed external URLs used by the Job Overview UI."""
-    experiment_id = _resolve_experiment_id(job)
-    setattr(job, "domino_job_url", _build_domino_job_url(job))
-    setattr(job, "experiment_id", experiment_id)
-    setattr(job, "experiment_run_url", _build_experiment_run_url(job, experiment_id))
-    return job
+    return attach_external_links(job, logger)
 
 
 def validate_job_create_request(job_request: JobCreateRequest) -> None:
@@ -355,11 +206,13 @@ async def create_job_with_context(
     owner = get_request_owner(request)
     project_id, project_name = get_project_context()
 
-    logger.info(f"[JOB CREATE] User: {owner}, Project: {project_id} ({project_name})")
-    logger.info("[JOB CREATE DEBUG] Received job create request")
-    logger.info(f"[JOB CREATE DEBUG] data_source: {job_request.data_source}")
-    logger.info(f"[JOB CREATE DEBUG] file_path from request: {job_request.file_path}")
-    logger.info(f"[JOB CREATE DEBUG] dataset_id: {job_request.dataset_id}")
+    logger.info(
+        "[JOB CREATE] user=%s project_id=%s project_name=%s data_source=%s",
+        owner,
+        project_id,
+        project_name,
+        job_request.data_source,
+    )
 
     validate_job_create_request(job_request)
     normalized_job_name = await validate_job_name_availability(

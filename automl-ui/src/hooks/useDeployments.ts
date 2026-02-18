@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
 import { useAsyncOperation } from './useAsyncOperation'
+import { aggregateAsyncState, orArray, orFalse, orNull } from './asyncHelpers'
 import type {
   Deployment,
   DeploymentResponse,
@@ -147,65 +148,58 @@ export function useDeployments(): UseDeploymentsResult {
     { errorMessage: 'Failed to deploy from job' }
   )
 
-  // Derive combined loading/error from all operations
-  const loading = fetchDeploymentsOp.loading || fetchModelApisOp.loading ||
-    getDeploymentOp.loading || getDeploymentStatusOp.loading || startDeploymentOp.loading ||
-    stopDeploymentOp.loading || deleteDeploymentOp.loading || getDeploymentLogsOp.loading ||
-    quickDeployOp.loading || deployFromJobOp.loading
-  const error = fetchDeploymentsOp.error ?? fetchModelApisOp.error ??
-    getDeploymentOp.error ?? getDeploymentStatusOp.error ?? startDeploymentOp.error ??
-    stopDeploymentOp.error ?? deleteDeploymentOp.error ?? getDeploymentLogsOp.error ??
-    quickDeployOp.error ?? deployFromJobOp.error ?? null
+  const { loading, error } = aggregateAsyncState([
+    fetchDeploymentsOp,
+    fetchModelApisOp,
+    getDeploymentOp,
+    getDeploymentStatusOp,
+    startDeploymentOp,
+    stopDeploymentOp,
+    deleteDeploymentOp,
+    getDeploymentLogsOp,
+    quickDeployOp,
+    deployFromJobOp,
+  ])
 
   // Wrap execute calls to preserve the original return-type contracts
   const fetchDeployments = useCallback(async () => {
-    const result = await fetchDeploymentsOp.execute()
-    return result ?? []
+    return orArray(fetchDeploymentsOp.execute())
   }, [fetchDeploymentsOp.execute])
 
   const fetchModelApis = useCallback(async () => {
-    const result = await fetchModelApisOp.execute()
-    return result ?? []
+    return orArray(fetchModelApisOp.execute())
   }, [fetchModelApisOp.execute])
 
   const getDeployment = useCallback(async (deploymentId: string) => {
-    const result = await getDeploymentOp.execute(deploymentId)
-    return result ?? null
+    return orNull(getDeploymentOp.execute(deploymentId))
   }, [getDeploymentOp.execute])
 
   const getDeploymentStatus = useCallback(async (deploymentId: string) => {
-    const result = await getDeploymentStatusOp.execute(deploymentId)
-    return result ?? null
+    return orNull(getDeploymentStatusOp.execute(deploymentId))
   }, [getDeploymentStatusOp.execute])
 
   const startDeployment = useCallback(async (deploymentId: string) => {
-    const result = await startDeploymentOp.execute(deploymentId, fetchDeployments)
-    return result ?? null
+    return orNull(startDeploymentOp.execute(deploymentId, fetchDeployments))
   }, [startDeploymentOp.execute, fetchDeployments])
 
   const stopDeployment = useCallback(async (deploymentId: string) => {
-    const result = await stopDeploymentOp.execute(deploymentId, fetchDeployments)
-    return result ?? null
+    return orNull(stopDeploymentOp.execute(deploymentId, fetchDeployments))
   }, [stopDeploymentOp.execute, fetchDeployments])
 
   const deleteDeployment = useCallback(async (deploymentId: string) => {
-    const result = await deleteDeploymentOp.execute(deploymentId, fetchDeployments)
-    return result ?? false
+    return orFalse(deleteDeploymentOp.execute(deploymentId, fetchDeployments))
   }, [deleteDeploymentOp.execute, fetchDeployments])
 
   const getDeploymentLogs = useCallback(async (deploymentId: string, logType?: string) => {
-    const result = await getDeploymentLogsOp.execute(deploymentId, logType ?? 'stdout')
-    return result ?? null
+    return orNull(getDeploymentLogsOp.execute(deploymentId, logType ?? 'stdout'))
   }, [getDeploymentLogsOp.execute])
 
   const quickDeploy = useCallback(async (request: QuickDeployRequest) => {
-    const result = await quickDeployOp.execute(request, fetchDeployments)
-    return result ?? null
+    return orNull(quickDeployOp.execute(request, fetchDeployments))
   }, [quickDeployOp.execute, fetchDeployments])
 
   const deployFromJob = useCallback(async (request: DeployFromJobRequest) => {
-    const result = await deployFromJobOp.execute(request, fetchDeployments)
-    return result ?? null
+    return orNull(deployFromJobOp.execute(request, fetchDeployments))
   }, [deployFromJobOp.execute, fetchDeployments])
 
   return {

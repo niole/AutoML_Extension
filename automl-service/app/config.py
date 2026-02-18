@@ -101,14 +101,21 @@ class Settings(BaseSettings):
     @property
     def effective_api_key(self) -> Optional[str]:
         """Get the effective API key (prefer DOMINO_API_KEY over DOMINO_USER_API_KEY)."""
-        import os
-        # Check multiple possible env var names
-        return (
-            self.domino_api_key or
-            self.domino_user_api_key or
-            os.environ.get("DOMINO_TOKEN_FILE") and open(os.environ.get("DOMINO_TOKEN_FILE")).read().strip() or
-            None
-        )
+        if self.domino_api_key:
+            return self.domino_api_key
+        if self.domino_user_api_key:
+            return self.domino_user_api_key
+
+        token_file = os.environ.get("DOMINO_TOKEN_FILE")
+        if not token_file:
+            return None
+
+        try:
+            with open(token_file, "r", encoding="utf-8") as handle:
+                token = handle.read().strip()
+            return token or None
+        except OSError:
+            return None
 
     # MLflow - auto-populated in Domino workspaces
     mlflow_tracking_uri: Optional[str] = None

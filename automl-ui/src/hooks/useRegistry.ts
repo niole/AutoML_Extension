@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
 import { useAsyncOperation } from './useAsyncOperation'
+import { aggregateAsyncState, orArray, orFalse, orNull } from './asyncHelpers'
 import type {
   RegisteredModel,
   ModelVersion,
@@ -172,25 +173,25 @@ export function useRegistry(): UseRegistryResult {
     { errorMessage: 'Failed to download model' }
   )
 
-  // Derive combined loading/error from all operations
-  const loading = fetchRegisteredModelsOp.loading || fetchModelVersionsOp.loading ||
-    registerModelOp.loading || transitionStageOp.loading || updateDescriptionOp.loading ||
-    deleteModelVersionOp.loading || deleteModelOp.loading || fetchModelCardOp.loading ||
-    downloadModelOp.loading
-  const error = fetchRegisteredModelsOp.error ?? fetchModelVersionsOp.error ??
-    registerModelOp.error ?? transitionStageOp.error ?? updateDescriptionOp.error ??
-    deleteModelVersionOp.error ?? deleteModelOp.error ?? fetchModelCardOp.error ??
-    downloadModelOp.error ?? null
+  const { loading, error } = aggregateAsyncState([
+    fetchRegisteredModelsOp,
+    fetchModelVersionsOp,
+    registerModelOp,
+    transitionStageOp,
+    updateDescriptionOp,
+    deleteModelVersionOp,
+    deleteModelOp,
+    fetchModelCardOp,
+    downloadModelOp,
+  ])
 
   // Wrap execute calls to preserve the original return-type contracts
   const fetchRegisteredModels = useCallback(async () => {
-    const result = await fetchRegisteredModelsOp.execute()
-    return result ?? []
+    return orArray(fetchRegisteredModelsOp.execute())
   }, [fetchRegisteredModelsOp.execute])
 
   const fetchModelVersions = useCallback(async (modelName: string) => {
-    const result = await fetchModelVersionsOp.execute(modelName)
-    return result ?? []
+    return orArray(fetchModelVersionsOp.execute(modelName))
   }, [fetchModelVersionsOp.execute])
 
   const registerModel = useCallback(async (
@@ -201,8 +202,7 @@ export function useRegistry(): UseRegistryResult {
     metrics?: Record<string, number>,
     jobId?: string
   ) => {
-    const result = await registerModelOp.execute(modelPath, modelName, modelType, description, metrics, jobId)
-    return result ?? null
+    return orNull(registerModelOp.execute(modelPath, modelName, modelType, description, metrics, jobId))
   }, [registerModelOp.execute])
 
   const transitionStage = useCallback(async (
@@ -211,8 +211,7 @@ export function useRegistry(): UseRegistryResult {
     stage: ModelStage,
     archiveExisting?: boolean
   ) => {
-    const result = await transitionStageOp.execute(modelName, version, stage, archiveExisting ?? false)
-    return result ?? null
+    return orNull(transitionStageOp.execute(modelName, version, stage, archiveExisting ?? false))
   }, [transitionStageOp.execute])
 
   const updateDescription = useCallback(async (
@@ -220,23 +219,19 @@ export function useRegistry(): UseRegistryResult {
     description: string,
     version?: string
   ) => {
-    const result = await updateDescriptionOp.execute(modelName, description, version)
-    return result ?? false
+    return orFalse(updateDescriptionOp.execute(modelName, description, version))
   }, [updateDescriptionOp.execute])
 
   const deleteModelVersion = useCallback(async (modelName: string, version: string) => {
-    const result = await deleteModelVersionOp.execute(modelName, version)
-    return result ?? false
+    return orFalse(deleteModelVersionOp.execute(modelName, version))
   }, [deleteModelVersionOp.execute])
 
   const deleteModel = useCallback(async (modelName: string) => {
-    const result = await deleteModelOp.execute(modelName)
-    return result ?? false
+    return orFalse(deleteModelOp.execute(modelName))
   }, [deleteModelOp.execute])
 
   const fetchModelCard = useCallback(async (modelName: string, version: string) => {
-    const result = await fetchModelCardOp.execute(modelName, version)
-    return result ?? null
+    return orNull(fetchModelCardOp.execute(modelName, version))
   }, [fetchModelCardOp.execute])
 
   // fetchModelsByStage is a composite operation that calls fetchModelVersions internally
@@ -268,8 +263,7 @@ export function useRegistry(): UseRegistryResult {
   }, [fetchModelVersions])
 
   const downloadModel = useCallback(async (modelName: string, version: string) => {
-    const result = await downloadModelOp.execute(modelName, version)
-    return result ?? null
+    return orNull(downloadModelOp.execute(modelName, version))
   }, [downloadModelOp.execute])
 
   return {

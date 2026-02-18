@@ -15,14 +15,11 @@ import { DataQualityPanel } from './DataQualityPanel'
 import { TimeSeriesOverview } from './TimeSeriesOverview'
 import { StationarityTrendPanel } from './StationarityTrendPanel'
 import { ACFPanel } from './ACFPanel'
+import type { TransformConfig } from '../../types/eda'
 import type { DataProfile, TimeSeriesProfile } from '../../types/profiling'
+import { formatCompactNumber } from '../../utils/formatters'
 
 type EDATab = 'data' | 'columns' | 'correlations' | 'quality' | 'transforms' | 'ts-overview' | 'ts-stationarity' | 'ts-acf'
-
-interface TransformConfig {
-  column: string
-  type: 'fillna' | 'scale' | 'encode' | 'drop' | 'log' | 'clip'
-}
 
 interface ProfiledDataViewProps {
   selectedFilePath: string
@@ -53,17 +50,6 @@ interface ProfiledDataViewProps {
   tsError?: string | null
 }
 
-function formatNumber(num: number | null | undefined): string {
-  if (num === null || num === undefined) return '-'
-  if (typeof num !== 'number' || isNaN(num)) return '-'
-  const abs = Math.abs(num)
-  if (abs >= 1e9) return (num / 1e9).toFixed(2) + 'B'
-  if (abs >= 1e6) return (num / 1e6).toFixed(2) + 'M'
-  if (abs >= 1e3) return num.toLocaleString(undefined, { maximumFractionDigits: 2 })
-  if (abs < 0.001 && abs > 0) return num.toExponential(2)
-  if (Number.isInteger(num)) return num.toLocaleString()
-  return num.toFixed(4)
-}
 
 export function ProfiledDataView({
   selectedFilePath,
@@ -448,7 +434,7 @@ function DataPreviewContent({
                   const displayValue = value === null || value === undefined
                     ? '-'
                     : typeof value === 'number'
-                    ? formatNumber(value)
+                    ? formatCompactNumber(value)
                     : String(value)
                   return (
                     <td

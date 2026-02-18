@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
 import { useAsyncOperation } from './useAsyncOperation'
+import { aggregateAsyncState, orNull, resetAsyncOperations } from './asyncHelpers'
 import type {
   FeatureImportanceResult,
   ConfusionMatrixResult,
@@ -159,13 +160,18 @@ export function useDiagnostics(): UseDiagnosticsResult {
     { errorMessage: 'Failed to run batch predictions' }
   )
 
-  // Derive combined loading/error from all operations
-  const loading = featureImportanceOp.loading || confusionMatrixOp.loading ||
-    rocCurveOp.loading || precisionRecallOp.loading || regressionDiagnosticsOp.loading ||
-    leaderboardOp.loading || modelInfoOp.loading || predictOp.loading || batchPredictOp.loading
-  const error = featureImportanceOp.error ?? confusionMatrixOp.error ??
-    rocCurveOp.error ?? precisionRecallOp.error ?? regressionDiagnosticsOp.error ??
-    leaderboardOp.error ?? modelInfoOp.error ?? predictOp.error ?? batchPredictOp.error ?? null
+  const operations = [
+    featureImportanceOp,
+    confusionMatrixOp,
+    rocCurveOp,
+    precisionRecallOp,
+    regressionDiagnosticsOp,
+    leaderboardOp,
+    modelInfoOp,
+    predictOp,
+    batchPredictOp,
+  ]
+  const { loading, error } = aggregateAsyncState(operations)
 
   // Reset all cached data - call when switching jobs
   const reset = useCallback(() => {
@@ -177,55 +183,47 @@ export function useDiagnostics(): UseDiagnosticsResult {
     setLeaderboard(null)
     setModelInfo(null)
     setPredictions(null)
-    // Reset errors on all operations
-    featureImportanceOp.reset()
-    confusionMatrixOp.reset()
-    rocCurveOp.reset()
-    precisionRecallOp.reset()
-    regressionDiagnosticsOp.reset()
-    leaderboardOp.reset()
-    modelInfoOp.reset()
-    predictOp.reset()
-    batchPredictOp.reset()
+    resetAsyncOperations(operations)
   }, [
-    featureImportanceOp, confusionMatrixOp, rocCurveOp, precisionRecallOp,
-    regressionDiagnosticsOp, leaderboardOp, modelInfoOp, predictOp, batchPredictOp
+    featureImportanceOp,
+    confusionMatrixOp,
+    rocCurveOp,
+    precisionRecallOp,
+    regressionDiagnosticsOp,
+    leaderboardOp,
+    modelInfoOp,
+    predictOp,
+    batchPredictOp,
+    operations,
   ])
 
   // Wrap execute calls to preserve the original return-type contracts
   const getFeatureImportance = useCallback(async (jobId: string, modelType?: string) => {
-    const result = await featureImportanceOp.execute(jobId, modelType)
-    return result ?? null
+    return orNull(featureImportanceOp.execute(jobId, modelType))
   }, [featureImportanceOp.execute])
 
   const getConfusionMatrix = useCallback(async (jobId: string, modelType?: string) => {
-    const result = await confusionMatrixOp.execute(jobId, modelType)
-    return result ?? null
+    return orNull(confusionMatrixOp.execute(jobId, modelType))
   }, [confusionMatrixOp.execute])
 
   const getROCCurve = useCallback(async (jobId: string, modelType?: string) => {
-    const result = await rocCurveOp.execute(jobId, modelType)
-    return result ?? null
+    return orNull(rocCurveOp.execute(jobId, modelType))
   }, [rocCurveOp.execute])
 
   const getPrecisionRecall = useCallback(async (jobId: string, modelType?: string) => {
-    const result = await precisionRecallOp.execute(jobId, modelType)
-    return result ?? null
+    return orNull(precisionRecallOp.execute(jobId, modelType))
   }, [precisionRecallOp.execute])
 
   const getRegressionDiagnostics = useCallback(async (jobId: string, modelType?: string) => {
-    const result = await regressionDiagnosticsOp.execute(jobId, modelType)
-    return result ?? null
+    return orNull(regressionDiagnosticsOp.execute(jobId, modelType))
   }, [regressionDiagnosticsOp.execute])
 
   const getLeaderboard = useCallback(async (jobId: string, modelType?: string) => {
-    const result = await leaderboardOp.execute(jobId, modelType)
-    return result ?? null
+    return orNull(leaderboardOp.execute(jobId, modelType))
   }, [leaderboardOp.execute])
 
   const getModelInfo = useCallback(async (modelId: string, modelType: string) => {
-    const result = await modelInfoOp.execute(modelId, modelType)
-    return result ?? null
+    return orNull(modelInfoOp.execute(modelId, modelType))
   }, [modelInfoOp.execute])
 
   const predict = useCallback(async (
@@ -234,8 +232,7 @@ export function useDiagnostics(): UseDiagnosticsResult {
     data: Record<string, unknown>[],
     returnProbs = false
   ) => {
-    const result = await predictOp.execute(modelId, modelType, data, returnProbs)
-    return result ?? null
+    return orNull(predictOp.execute(modelId, modelType, data, returnProbs))
   }, [predictOp.execute])
 
   const batchPredict = useCallback(async (
@@ -244,8 +241,7 @@ export function useDiagnostics(): UseDiagnosticsResult {
     inputFile: string,
     outputFile: string
   ) => {
-    const result = await batchPredictOp.execute(modelId, modelType, inputFile, outputFile)
-    return result ?? null
+    return orNull(batchPredictOp.execute(modelId, modelType, inputFile, outputFile))
   }, [batchPredictOp.execute])
 
   return {

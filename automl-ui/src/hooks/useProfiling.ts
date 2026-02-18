@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import api from '../api'
 import { useAsyncOperation } from './useAsyncOperation'
+import { aggregateAsyncState, orArray, orNull } from './asyncHelpers'
 import type {
   AsyncProfileStartRequest,
   AsyncProfileStartResponse,
@@ -132,47 +133,43 @@ export function useProfiling(): UseProfilingResult {
     { errorMessage: 'Failed to profile time series' }
   )
 
-  // Derive combined loading/error from all operations
-  const loading = profileOp.loading || quickProfileOp.loading || suggestTargetOp.loading ||
-    profileColumnOp.loading || fetchMetricsOp.loading || fetchPresetsOp.loading
-  const error = profileOp.error ?? quickProfileOp.error ?? suggestTargetOp.error ??
-    profileColumnOp.error ?? fetchMetricsOp.error ?? fetchPresetsOp.error ?? null
+  const { loading, error } = aggregateAsyncState([
+    profileOp,
+    quickProfileOp,
+    suggestTargetOp,
+    profileColumnOp,
+    fetchMetricsOp,
+    fetchPresetsOp,
+  ])
 
   // Wrap execute calls to preserve the original return-type contracts
   // (returning null / [] on failure instead of undefined)
   const profileFile = useCallback(async (filePath: string, sampleSize?: number, samplingStrategy?: string, stratifyColumn?: string) => {
-    const result = await profileOp.execute(filePath, sampleSize ?? 50000, samplingStrategy ?? 'random', stratifyColumn)
-    return result ?? null
+    return orNull(profileOp.execute(filePath, sampleSize ?? 50000, samplingStrategy ?? 'random', stratifyColumn))
   }, [profileOp.execute])
 
   const quickProfileFile = useCallback(async (filePath: string) => {
-    const result = await quickProfileOp.execute(filePath)
-    return result ?? null
+    return orNull(quickProfileOp.execute(filePath))
   }, [quickProfileOp.execute])
 
   const suggestTarget = useCallback(async (filePath: string) => {
-    const result = await suggestTargetOp.execute(filePath)
-    return result ?? []
+    return orArray(suggestTargetOp.execute(filePath))
   }, [suggestTargetOp.execute])
 
   const profileColumn = useCallback(async (filePath: string, columnName: string) => {
-    const result = await profileColumnOp.execute(filePath, columnName)
-    return result ?? null
+    return orNull(profileColumnOp.execute(filePath, columnName))
   }, [profileColumnOp.execute])
 
   const fetchMetrics = useCallback(async () => {
-    const result = await fetchMetricsOp.execute()
-    return result ?? null
+    return orNull(fetchMetricsOp.execute())
   }, [fetchMetricsOp.execute])
 
   const fetchPresets = useCallback(async () => {
-    const result = await fetchPresetsOp.execute()
-    return result ?? null
+    return orNull(fetchPresetsOp.execute())
   }, [fetchPresetsOp.execute])
 
   const profileTimeSeries = useCallback(async (request: TimeSeriesProfileRequest) => {
-    const result = await tsProfileOp.execute(request)
-    return result ?? null
+    return orNull(tsProfileOp.execute(request))
   }, [tsProfileOp.execute])
 
   const startAsyncProfile = useCallback(async (request: AsyncProfileStartRequest) => {

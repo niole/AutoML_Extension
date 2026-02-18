@@ -1,18 +1,16 @@
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useDatasets, useUploadFile, useDatasetPreview } from '../hooks/useDatasets'
+import { useEdaAsyncProfiling } from '../hooks/useEdaAsyncProfiling'
 import { useProfiling } from '../hooks/useProfiling'
 import { useStore } from '../store'
 import { Dataset, DatasetFile } from '../types/dataset'
+import type { TransformConfig } from '../types/eda'
 import { generateEDANotebook } from '../utils/notebookGenerator'
+import { getFileName } from '../utils/path'
 import { DataSourceSelector } from '../components/eda/DataSourceSelector'
 import { ProfiledDataView } from '../components/eda/ProfiledDataView'
 import { TimeSeriesConfigPanel } from '../components/eda/TimeSeriesConfigPanel'
-
-interface TransformConfig {
-  column: string
-  type: 'fillna' | 'scale' | 'encode' | 'drop' | 'log' | 'clip'
-}
 
 function EDAAnalysis() {
   const [searchParams] = useSearchParams()
@@ -42,10 +40,6 @@ function EDAAnalysis() {
   const [targetColumn, setTargetColumn] = useState('')
   const [idColumn, setIdColumn] = useState('')
   const [rollingWindow, setRollingWindow] = useState('')
-  const [asyncRequestId, setAsyncRequestId] = useState<string | null>(null)
-  const [asyncDominoJobId, setAsyncDominoJobId] = useState<string | null>(null)
-  const [asyncProfileStatus, setAsyncProfileStatus] = useState<'idle' | 'starting' | 'pending' | 'running' | 'completed' | 'failed'>('idle')
-  const [asyncProfileError, setAsyncProfileError] = useState<string | null>(null)
   const [querySelectionApplied, setQuerySelectionApplied] = useState(false)
 
   const datasets = datasetsData?.datasets || []
@@ -95,74 +89,21 @@ function EDAAnalysis() {
     offset
   )
 
-  const resetAsyncState = useCallback(() => {
-    setAsyncRequestId(null)
-    setAsyncDominoJobId(null)
-    setAsyncProfileStatus('idle')
-    setAsyncProfileError(null)
-  }, [])
-
-  const startAsyncTabularProfiling = useCallback(async (
-    filePath: string,
-    size: number,
-    strategy: string,
-    stratifyCol?: string
-  ) => {
-    setAsyncProfileStatus('starting')
-    setAsyncProfileError(null)
-    setAsyncRequestId(null)
-    try {
-      const response = await startAsyncProfile({
-        mode: 'tabular',
-        file_path: filePath,
-        sample_size: size,
-        sampling_strategy: strategy,
-        stratify_column: stratifyCol || undefined,
-      })
-      setAsyncRequestId(response.request_id)
-      setAsyncDominoJobId(response.domino_job_id || null)
-      setAsyncProfileStatus(response.status === 'pending' ? 'pending' : 'running')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to start async EDA profiling'
-      setAsyncProfileError(message)
-      setAsyncProfileStatus('failed')
-      addNotification(message, 'error')
-    }
-  }, [addNotification, startAsyncProfile])
-
-  const startAsyncTimeSeriesProfiling = useCallback(async (
-    filePath: string,
-    tc: string,
-    tgt: string,
-    id: string,
-    size: number,
-    strategy: string,
-    rw: string
-  ) => {
-    setAsyncProfileStatus('starting')
-    setAsyncProfileError(null)
-    setAsyncRequestId(null)
-    try {
-      const response = await startAsyncProfile({
-        mode: 'timeseries',
-        file_path: filePath,
-        time_column: tc,
-        target_column: tgt,
-        id_column: id || undefined,
-        sample_size: size,
-        sampling_strategy: strategy,
-        rolling_window: Number(rw) || undefined,
-      })
-      setAsyncRequestId(response.request_id)
-      setAsyncDominoJobId(response.domino_job_id || null)
-      setAsyncProfileStatus(response.status === 'pending' ? 'pending' : 'running')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to start async time series profiling'
-      setAsyncProfileError(message)
-      setAsyncProfileStatus('failed')
-      addNotification(message, 'error')
-    }
-  }, [addNotification, startAsyncProfile])
+  const {
+    asyncDominoJobId,
+    asyncProfileError,
+    asyncProfileStatus,
+    resetAsyncState,
+    startAsyncTabularProfiling,
+    startAsyncTimeSeriesProfiling,
+  } = useEdaAsyncProfiling({
+    edaExecutionTarget,
+    startAsyncProfile,
+    getAsyncProfileStatus,
+    setProfileData,
+    setTsProfileData,
+    addNotification,
+  })
 
   useEffect(() => {
     if (!selectedFilePath) return
@@ -173,59 +114,6 @@ function EDAAnalysis() {
     }
     void startAsyncTabularProfiling(selectedFilePath, sampleSize, samplingStrategy, stratifyColumn || undefined)
   }, [selectedFilePath, edaExecutionTarget, profileFile, resetAsyncState, startAsyncTabularProfiling])
-
-  useEffect(() => {
-    if (!asyncRequestId || edaExecutionTarget !== 'domino_job') return
-
-    let mounted = true
-    let intervalId: number | null = null
-
-    const pollStatus = async () => {
-      try {
-        const status = await getAsyncProfileStatus(asyncRequestId)
-        if (!mounted) return
-
-        setAsyncDominoJobId(status.domino_job_id || asyncDominoJobId)
-
-        if (status.status === 'completed') {
-          if (status.mode === 'timeseries' && status.result) {
-            setTsProfileData(status.result as any)
-          } else if (status.result) {
-            setProfileData(status.result as any)
-          }
-          setAsyncProfileStatus('completed')
-          setAsyncProfileError(null)
-          if (intervalId !== null) window.clearInterval(intervalId)
-          return
-        }
-
-        if (status.status === 'failed') {
-          setAsyncProfileStatus('failed')
-          setAsyncProfileError(status.error || 'Async profiling failed')
-          if (intervalId !== null) window.clearInterval(intervalId)
-          return
-        }
-
-        setAsyncProfileStatus(status.status === 'pending' ? 'pending' : 'running')
-      } catch (error) {
-        if (!mounted) return
-        const message = error instanceof Error ? error.message : 'Failed to poll async profiling status'
-        setAsyncProfileStatus('failed')
-        setAsyncProfileError(message)
-        if (intervalId !== null) window.clearInterval(intervalId)
-      }
-    }
-
-    void pollStatus()
-    intervalId = window.setInterval(() => {
-      void pollStatus()
-    }, 4000)
-
-    return () => {
-      mounted = false
-      if (intervalId !== null) window.clearInterval(intervalId)
-    }
-  }, [asyncDominoJobId, asyncRequestId, edaExecutionTarget, getAsyncProfileStatus, setProfileData, setTsProfileData])
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -517,8 +405,3 @@ function EDAAnalysis() {
 }
 
 export default EDAAnalysis
-
-function getFileName(path: string): string {
-  const segments = path.split('/')
-  return segments[segments.length - 1] || path
-}

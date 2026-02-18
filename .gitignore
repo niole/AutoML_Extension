@@ -6,6 +6,7 @@ automl-service/local_data/
 automl-service/mlruns/
 
 # Database
+automl.db
 automl-service/automl.db
 automl-service/uploads/
 
