@@ -338,6 +338,7 @@ class ModelAPIManager:
         owner_id: Optional[str],
         source_file: Optional[str],
         source_function: Optional[str],
+        include_version: bool,
     ) -> List[Dict[str, Any]]:
         """Build payload variants for Domino version compatibility."""
         base_payload: Dict[str, Any] = {
@@ -350,6 +351,9 @@ class ModelAPIManager:
         }
         if owner_id:
             base_payload["ownerId"] = owner_id
+
+        if not include_version:
+            return [base_payload]
 
         source_file_candidates: List[str] = []
         if source_file:
@@ -419,6 +423,7 @@ class ModelAPIManager:
         environment_id: Optional[str] = None,
         source_file: Optional[str] = None,
         source_function: Optional[str] = None,
+        include_version: bool = True,
     ) -> Dict[str, Any]:
         """Create a new Model API.
 
@@ -459,6 +464,7 @@ class ModelAPIManager:
             owner_id=owner_id,
             source_file=source_file,
             source_function=source_function,
+            include_version=include_version,
         )
 
         last_error: Optional[str] = None
@@ -900,6 +906,7 @@ class DominoModelAPI:
         environment_id: Optional[str] = None,
         source_file: Optional[str] = None,
         source_function: Optional[str] = None,
+        include_version: bool = True,
     ) -> Dict[str, Any]:
         """Create a new Model API."""
         return await self.model_apis.create_model_api(
@@ -910,6 +917,7 @@ class DominoModelAPI:
             environment_id,
             source_file,
             source_function,
+            include_version,
         )
 
     async def get_model_api(self, model_api_id: str) -> Dict[str, Any]:
@@ -1033,6 +1041,7 @@ class DominoModelAPI:
                 environment_id=environment_id,
                 source_file=model_file,
                 source_function=function_name,
+                include_version=False,
             )
             if not api_result["success"]:
                 result["error"] = f"Failed to create Model API: {api_result.get('error')}"
