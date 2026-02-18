@@ -23,7 +23,7 @@ The AutoML Extension is a full-stack web application that runs as a Domino App. 
   1. Upload / Select Data
           │
           ▼
-  2. Exploratory Data Analysis
+  2. Exploratory Data Analysis (optional)
           │
           ▼
   3. Configure Training
