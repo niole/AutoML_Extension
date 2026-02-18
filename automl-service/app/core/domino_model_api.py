@@ -359,7 +359,12 @@ class ModelAPIManager:
         if source_file:
             source_file_candidates.append(source_file)
             source_basename = os.path.basename(source_file)
-            if source_basename and source_basename not in source_file_candidates:
+            source_has_directory = bool(os.path.dirname(source_file))
+            if (
+                source_basename
+                and source_basename not in source_file_candidates
+                and not source_has_directory
+            ):
                 source_file_candidates.append(source_basename)
         else:
             source_file_candidates.append("model.py")
@@ -592,7 +597,12 @@ class ModelVersionManager:
         resolved_function = function_name or "predict"
         file_candidates = [model_file]
         model_file_basename = os.path.basename(model_file)
-        if model_file_basename and model_file_basename not in file_candidates:
+        model_file_has_directory = bool(os.path.dirname(model_file))
+        if (
+            model_file_basename
+            and model_file_basename not in file_candidates
+            and not model_file_has_directory
+        ):
             file_candidates.append(model_file_basename)
 
         payload_variants: List[Dict[str, Any]] = []

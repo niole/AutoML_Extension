@@ -6,7 +6,14 @@ from typing import Optional, Sequence
 from sqlalchemy import select, update, desc, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Job, JobLog, JobStatus, ModelType, RegisteredModel
+from app.db.models import (
+    Job,
+    JobLog,
+    JobStatus,
+    ModelApiSourceBundle,
+    ModelType,
+    RegisteredModel,
+)
 
 
 # Job CRUD operations
@@ -335,5 +342,109 @@ async def count_job_logs(db: AsyncSession, job_id: str) -> int:
     """Count log entries for a job."""
     result = await db.execute(
         select(func.count()).select_from(JobLog).where(JobLog.job_id == job_id)
+    )
+    return result.scalar()
+
+
+# Model API Source Bundle tracking
+
+async def upsert_model_api_source_bundle(
+    db: AsyncSession,
+    model_api_id: str,
+    job_id: str,
+    bundle_dir: str,
+    source_file: str,
+) -> ModelApiSourceBundle:
+    """Create or update bundle tracking for a published Domino Model API."""
+    result = await db.execute(
+        select(ModelApiSourceBundle).where(ModelApiSourceBundle.model_api_id == model_api_id)
+    )
+    existing = result.scalar_one_or_none()
+    now = datetime.utcnow()
+
+    if existing:
+        existing.job_id = job_id
+        existing.bundle_dir = bundle_dir
+        existing.source_file = source_file
+        existing.miss_count = 0
+        existing.updated_at = now
+        existing.last_seen_at = now
+        existing.last_checked_at = now
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+
+    record = ModelApiSourceBundle(
+        model_api_id=model_api_id,
+        job_id=job_id,
+        bundle_dir=bundle_dir,
+        source_file=source_file,
+        miss_count=0,
+        created_at=now,
+        updated_at=now,
+        last_seen_at=now,
+        last_checked_at=now,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    return record
+
+
+async def get_model_api_source_bundle(
+    db: AsyncSession,
+    model_api_id: str,
+) -> Optional[ModelApiSourceBundle]:
+    """Get source-bundle tracking row for a model API id."""
+    result = await db.execute(
+        select(ModelApiSourceBundle).where(ModelApiSourceBundle.model_api_id == model_api_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_model_api_source_bundles(
+    db: AsyncSession,
+) -> Sequence[ModelApiSourceBundle]:
+    """List all tracked source bundles for published model APIs."""
+    result = await db.execute(
+        select(ModelApiSourceBundle).order_by(desc(ModelApiSourceBundle.created_at))
+    )
+    return result.scalars().all()
+
+
+async def delete_model_api_source_bundle(
+    db: AsyncSession,
+    model_api_id: str,
+) -> bool:
+    """Delete source-bundle tracker row by model_api_id."""
+    row = await get_model_api_source_bundle(db, model_api_id)
+    if row is None:
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True
+
+
+async def delete_model_api_source_bundles_by_bundle_dir(
+    db: AsyncSession,
+    bundle_dir: str,
+) -> int:
+    """Delete all source-bundle tracker rows for a bundle directory."""
+    result = await db.execute(
+        delete(ModelApiSourceBundle).where(ModelApiSourceBundle.bundle_dir == bundle_dir)
+    )
+    await db.commit()
+    return result.rowcount
+
+
+async def count_model_api_source_bundles_by_bundle_dir(
+    db: AsyncSession,
+    bundle_dir: str,
+) -> int:
+    """Count tracked model APIs that reference a bundle directory."""
+    result = await db.execute(
+        select(func.count())
+        .select_from(ModelApiSourceBundle)
+        .where(ModelApiSourceBundle.bundle_dir == bundle_dir)
     )
     return result.scalar()

@@ -79,9 +79,13 @@ async def lifespan(app: FastAPI):
     from app.core.job_queue import get_job_queue
     queue = get_job_queue()
     await queue.startup()
+    from app.core.model_api_source_bundle_gc import get_model_api_source_bundle_gc
+    bundle_gc = get_model_api_source_bundle_gc()
+    await bundle_gc.startup()
 
     yield
 
+    await bundle_gc.shutdown()
     await queue.shutdown(timeout=30.0)
     logger.info("Shutting down application")
 

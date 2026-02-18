@@ -123,3 +123,18 @@ class RegisteredModel(Base):
     domino_model_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     deployed: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ModelApiSourceBundle(Base):
+    """Tracks staged source bundles used for Domino Model API publish."""
+    __tablename__ = "model_api_source_bundles"
+
+    model_api_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    bundle_dir: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
+    source_file: Mapped[str] = mapped_column(String(1024), nullable=False)
+    miss_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

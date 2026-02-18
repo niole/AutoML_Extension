@@ -4,11 +4,14 @@ import logging
 import keyword
 import os
 import re
+import shutil
 import textwrap
+from pathlib import Path
 from typing import Optional
 
 from fastapi import HTTPException
 
+from app.core.model_api_source_bundle_gc import get_model_api_source_bundle_gc
 from app.core.domino_model_api import get_domino_model_api
 from app.db import crud
 from app.db.models import JobStatus
@@ -139,7 +142,7 @@ def {function_name}(data):
     )
 
 
-def _ensure_model_entrypoint(model_path: str, function_name: str) -> str:
+def _ensure_model_entrypoint(model_path: str, function_name: str, overwrite: bool = False) -> str:
     """Ensure model.py exists inside the trained model directory."""
     if not os.path.isdir(model_path):
         raise HTTPException(status_code=400, detail=f"Model directory not found: {model_path}")
@@ -151,7 +154,7 @@ def _ensure_model_entrypoint(model_path: str, function_name: str) -> str:
         )
 
     model_file = os.path.join(model_path, "model.py")
-    if os.path.isfile(model_file):
+    if os.path.isfile(model_file) and not overwrite:
         return model_file
 
     try:
@@ -163,8 +166,39 @@ def _ensure_model_entrypoint(model_path: str, function_name: str) -> str:
             detail=f"Failed to generate model entrypoint at {model_file}: {exc}",
         ) from exc
 
-    logger.info(f"Generated model entrypoint at {model_file}")
+    logger.info(f"Prepared model entrypoint at {model_file}")
     return model_file
+
+
+def _prepare_model_api_source_bundle(job_id: str, model_path: str, function_name: str) -> tuple[str, str]:
+    """Copy model artifacts into project code tree and return source_file and bundle_dir."""
+    if not os.path.isdir(model_path):
+        raise HTTPException(status_code=400, detail=f"Model directory not found: {model_path}")
+
+    bundle_dir = get_model_api_source_bundle_gc().bundle_dir_for_job(job_id)
+
+    try:
+        if bundle_dir.exists():
+            shutil.rmtree(bundle_dir)
+        shutil.copytree(model_path, bundle_dir)
+        _ensure_model_entrypoint(str(bundle_dir), function_name, overwrite=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to prepare model API source bundle for job {job_id}: {exc}",
+        ) from exc
+
+    source_file = Path(".automl_model_api_sources") / bundle_dir.name / "model.py"
+
+    source_file_str = source_file.as_posix()
+    bundle_dir_str = str(bundle_dir)
+    logger.info(
+        "Prepared Model API source bundle for job %s: source_file=%s, bundle_dir=%s",
+        job_id,
+        source_file_str,
+        bundle_dir_str,
+    )
+    return source_file_str, bundle_dir_str
 
 
 def _safe_deployment_result(result, invalid_message: str) -> dict:
@@ -230,7 +264,7 @@ async def deploy_from_job(
         raise HTTPException(status_code=400, detail="Model path not found for this job")
 
     resolved_function_name = (function_name or "predict").strip() or "predict"
-    model_file = _ensure_model_entrypoint(model_path, resolved_function_name)
+    model_file, bundle_dir = _prepare_model_api_source_bundle(job_id, model_path, resolved_function_name)
     api = get_domino_model_api()
     result = await api.deploy_model(
         model_name=deploy_name,
@@ -245,11 +279,25 @@ async def deploy_from_job(
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
+    model_api_id = result.get("model_api_id")
+    if model_api_id:
+        await get_model_api_source_bundle_gc().track_model_api_source_bundle(
+            model_api_id=str(model_api_id),
+            job_id=job_id,
+            bundle_dir=bundle_dir,
+            source_file=model_file,
+        )
+    else:
+        logger.warning(
+            "Model API publish succeeded for job %s but no model_api_id was returned; bundle tracking skipped",
+            job_id,
+        )
+
     return {
         "success": True,
         "job_id": job_id,
         "deployment_id": result.get("deployment_id"),
-        "model_api_id": result.get("model_api_id"),
+        "model_api_id": model_api_id,
         "endpoint_url": result.get("endpoint_url"),
         "message": f"Model '{deploy_name}' deployed from job {job_id}",
     }
