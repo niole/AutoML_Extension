@@ -20,6 +20,8 @@ from app.dependencies import get_db_session
 
 logger = logging.getLogger(__name__)
 
+STATIC_MODEL_API_SOURCE_FILE = "automl-service/app/serving/model_api_entrypoint.py"
+
 
 def _is_valid_python_identifier(name: str) -> bool:
     """Check that the requested prediction function name is a valid identifier."""
@@ -265,14 +267,18 @@ async def deploy_from_job(
     model_path = job.model_path
     if not model_path:
         raise HTTPException(status_code=400, detail="Model path not found for this job")
+    if not os.path.isdir(model_path):
+        raise HTTPException(status_code=400, detail=f"Model directory not found: {model_path}")
 
     resolved_function_name = (function_name or "predict").strip() or "predict"
-    model_file, bundle_dir = _prepare_model_api_source_bundle(job_id, model_path, resolved_function_name)
+    # Use a committed source entrypoint so Domino can resolve it from project code.
+    model_file = STATIC_MODEL_API_SOURCE_FILE
     api = get_domino_model_api()
     result = await api.deploy_model(
         model_name=deploy_name,
         model_file=model_file,
         function_name=resolved_function_name,
+        model_artifact_dir=model_path,
         description=f"AutoML model from job {job_id}. Type: {job.model_type}",
         min_replicas=min_replicas,
         max_replicas=max_replicas,
@@ -283,18 +289,6 @@ async def deploy_from_job(
         raise HTTPException(status_code=400, detail=result.get("error"))
 
     model_api_id = result.get("model_api_id")
-    if model_api_id:
-        await get_model_api_source_bundle_gc().track_model_api_source_bundle(
-            model_api_id=str(model_api_id),
-            job_id=job_id,
-            bundle_dir=bundle_dir,
-            source_file=model_file,
-        )
-    else:
-        logger.warning(
-            "Model API publish succeeded for job %s but no model_api_id was returned; bundle tracking skipped",
-            job_id,
-        )
 
     return {
         "success": True,

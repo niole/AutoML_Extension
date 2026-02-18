@@ -341,15 +341,32 @@ class ModelAPIManager:
         source_function: Optional[str],
         include_version: bool,
         should_deploy: bool,
+        environment_variables: Optional[List[Dict[str, str]]],
     ) -> List[Dict[str, Any]]:
         """Build payload variants for Domino version compatibility."""
+        normalized_environment_variables: List[Dict[str, str]] = []
+        if environment_variables:
+            for item in environment_variables:
+                if not isinstance(item, dict):
+                    continue
+                key = item.get("key")
+                value = item.get("value")
+                if key is None or value is None:
+                    continue
+                normalized_environment_variables.append(
+                    {
+                        "key": str(key),
+                        "value": str(value),
+                    }
+                )
+
         base_payload: Dict[str, Any] = {
             "name": name,
             "description": description,
             "environmentId": environment_id,
             "strictNodeAntiAffinity": False,
             "isAsync": False,
-            "environmentVariables": [],
+            "environmentVariables": normalized_environment_variables,
         }
         if owner_id:
             base_payload["ownerId"] = owner_id
@@ -432,6 +449,7 @@ class ModelAPIManager:
         source_function: Optional[str] = None,
         include_version: bool = True,
         should_deploy: bool = False,
+        environment_variables: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """Create a new Model API.
 
@@ -474,6 +492,7 @@ class ModelAPIManager:
             source_function=source_function,
             include_version=include_version,
             should_deploy=should_deploy,
+            environment_variables=environment_variables,
         )
 
         last_error: Optional[str] = None
@@ -922,6 +941,7 @@ class DominoModelAPI:
         source_function: Optional[str] = None,
         include_version: bool = True,
         should_deploy: bool = False,
+        environment_variables: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """Create a new Model API."""
         return await self.model_apis.create_model_api(
@@ -934,6 +954,7 @@ class DominoModelAPI:
             source_function,
             include_version,
             should_deploy,
+            environment_variables,
         )
 
     async def get_model_api(self, model_api_id: str) -> Dict[str, Any]:
@@ -1144,6 +1165,7 @@ class DominoModelAPI:
         model_name: str,
         model_file: str,
         function_name: str,
+        model_artifact_dir: Optional[str] = None,
         description: str = "",
         environment_id: Optional[str] = None,
         hardware_tier_id: Optional[str] = None,
@@ -1164,6 +1186,15 @@ class DominoModelAPI:
         }
 
         try:
+            environment_variables: List[Dict[str, str]] = []
+            if model_artifact_dir:
+                environment_variables.append(
+                    {
+                        "key": "AUTOML_MODEL_DIR",
+                        "value": str(model_artifact_dir),
+                    }
+                )
+
             # Step 1: Create Model API
             api_result = await self.create_model_api(
                 name=model_name,
@@ -1173,6 +1204,7 @@ class DominoModelAPI:
                 source_function=function_name,
                 include_version=True,
                 should_deploy=auto_start,
+                environment_variables=environment_variables,
             )
             if not api_result["success"]:
                 result["error"] = f"Failed to create Model API: {api_result.get('error')}"
