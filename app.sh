@@ -72,7 +72,7 @@ sanitize_path_segment() {
 
 init_storage_paths() {
     if [ "$IS_DOMINO" = true ]; then
-        local project_name="${DOMINO_PROJECT_NAME:-${DOMINO_PROJECT_ID:-default_project}}"
+        local project_name="${DOMINO_PROJECT_NAME:-default_project}"
         local resolved_project_name
         resolved_project_name="$(sanitize_path_segment "$project_name")"
 

@@ -44,8 +44,6 @@ class Settings(BaseSettings):
         return sanitize_project_name(
             self.domino_project_name
             or os.environ.get("DOMINO_PROJECT_NAME")
-            or self.domino_project_id
-            or os.environ.get("DOMINO_PROJECT_ID")
             or "default_project"
         )
 

@@ -292,7 +292,7 @@ For Domino proxy constraints, the backend also exposes 66 single-segment `/svc*`
 | `WORKERS` | No | Uvicorn worker count (use `1` for local queue mode) |
 
 In Domino, default writable paths are scoped per project under `/mnt/data/<safe_project_name>/`.
-`<safe_project_name>` resolves in this order: `DOMINO_PROJECT_NAME` -> `DOMINO_PROJECT_ID` -> `default_project`,
+`<safe_project_name>` resolves in this order: `DOMINO_PROJECT_NAME` -> `default_project`,
 then non-path-safe characters are replaced with `_`.
 Derived defaults:
 - `MODELS_PATH`: `/mnt/data/<safe_project_name>/models`
