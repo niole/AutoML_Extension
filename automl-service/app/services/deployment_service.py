@@ -20,59 +20,7 @@ from app.dependencies import get_db_session
 
 logger = logging.getLogger(__name__)
 
-STATIC_MODEL_API_SOURCE_FILE_CANDIDATES = (
-    # Preferred dedicated serving entrypoint.
-    "automl-service/app/serving/model_api_entrypoint.py",
-    # Legacy path kept for backward compatibility.
-    "automl-service/model_api.py",
-    # Historical fallback.
-    "model_api.py",
-)
-
-_LEGACY_APP_IMPORT_SENTINEL = "from app.main import app"
-
-
-def _project_root() -> Path:
-    """Return AutoML_Extension repository root path."""
-    return Path(__file__).resolve().parents[3]
-
-
-def _resolve_static_model_api_source_file() -> str:
-    """Resolve a committed model entrypoint file that is safe for model serving."""
-    root = _project_root()
-
-    for rel_path in STATIC_MODEL_API_SOURCE_FILE_CANDIDATES:
-        candidate = (root / rel_path).resolve()
-        if not candidate.is_file():
-            continue
-
-        try:
-            preview = candidate.read_text(encoding="utf-8")
-        except Exception as exc:
-            logger.warning(
-                "Skipping unreadable model API source file candidate %s: %s",
-                rel_path,
-                exc,
-            )
-            continue
-
-        if _LEGACY_APP_IMPORT_SENTINEL in preview:
-            logger.warning(
-                "Skipping legacy model API source file candidate %s because it imports app.main",
-                rel_path,
-            )
-            continue
-
-        logger.info("Using model API source file candidate: %s", rel_path)
-        return rel_path
-
-    raise HTTPException(
-        status_code=500,
-        detail=(
-            "No valid committed model API source file found for deployment. "
-            f"Checked: {', '.join(STATIC_MODEL_API_SOURCE_FILE_CANDIDATES)}"
-        ),
-    )
+STATIC_MODEL_API_SOURCE_FILE = "automl-service/app/serving/model_api_entrypoint.py"
 
 
 def _is_valid_python_identifier(name: str) -> bool:
@@ -324,7 +272,7 @@ async def deploy_from_job(
 
     resolved_function_name = (function_name or "predict").strip() or "predict"
     # Use a committed source entrypoint so Domino can resolve it from project code.
-    model_file = _resolve_static_model_api_source_file()
+    model_file = STATIC_MODEL_API_SOURCE_FILE
     api = get_domino_model_api()
     result = await api.deploy_model(
         model_name=deploy_name,
