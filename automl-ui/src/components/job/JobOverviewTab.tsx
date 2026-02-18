@@ -218,10 +218,15 @@ function getFileName(path: string): string {
 function toDominoTenantUrl(rawUrl?: string): string | null {
   if (!rawUrl) return null
   try {
-    const url = new URL(rawUrl, window.location.origin)
-    if (url.hostname.startsWith('apps.')) {
-      url.hostname = url.hostname.slice('apps.'.length)
+    const tenantUrl = new URL(window.location.origin)
+    if (tenantUrl.hostname.startsWith('apps.')) {
+      tenantUrl.hostname = tenantUrl.hostname.slice('apps.'.length)
     }
+
+    const url = new URL(rawUrl, tenantUrl.origin)
+    url.protocol = tenantUrl.protocol
+    url.hostname = tenantUrl.hostname
+    url.port = tenantUrl.port
     return url.toString()
   } catch {
     return rawUrl

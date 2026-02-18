@@ -117,13 +117,10 @@ def _normalize_domino_ui_host(raw: Optional[str]) -> Optional[str]:
 
 def _resolve_domino_ui_host() -> Optional[str]:
     """Resolve preferred Domino tenant host for user-facing links."""
-    settings = get_settings()
     for raw in (
         os.environ.get("DOMINO_USER_HOST"),
         os.environ.get("DOMINO_EXTERNAL_HOST"),
         os.environ.get("DOMINO_LINK_HOST"),
-        settings.domino_api_host,
-        os.environ.get("DOMINO_API_HOST"),
     ):
         normalized = _normalize_domino_ui_host(raw)
         if normalized:
