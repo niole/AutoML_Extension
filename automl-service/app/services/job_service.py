@@ -5,6 +5,7 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
+from urllib.parse import quote, urlparse, urlunparse
 
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -83,6 +84,142 @@ def get_project_context() -> tuple[Optional[str], Optional[str]]:
         settings.domino_project_id or os.environ.get("DOMINO_PROJECT_ID"),
         settings.domino_project_name or os.environ.get("DOMINO_PROJECT_NAME"),
     )
+
+
+def _resolve_domino_host() -> Optional[str]:
+    """Resolve Domino host used for external UI links."""
+    settings = get_settings()
+    host = settings.domino_api_host or os.environ.get("DOMINO_API_HOST")
+    if not host:
+        return None
+    host = host.strip()
+    return host or None
+
+
+def _resolve_project_owner() -> Optional[str]:
+    """Resolve Domino project owner for project-scoped UI links."""
+    settings = get_settings()
+    owner = settings.domino_project_owner or os.environ.get("DOMINO_PROJECT_OWNER")
+    if not owner:
+        return None
+    owner = owner.strip()
+    return owner or None
+
+
+def _resolve_project_name(job: Job) -> Optional[str]:
+    """Resolve Domino project name preferring job metadata, then environment."""
+    if job.project_name and job.project_name.strip():
+        return job.project_name.strip()
+
+    settings = get_settings()
+    project_name = settings.domino_project_name or os.environ.get("DOMINO_PROJECT_NAME")
+    if not project_name:
+        return None
+    project_name = project_name.strip()
+    return project_name or None
+
+
+def _build_domino_job_url(job: Job) -> Optional[str]:
+    """Build canonical Domino run URL for a job id when context is available."""
+    if not job.domino_job_id:
+        return None
+
+    host = _resolve_domino_host()
+    owner = _resolve_project_owner()
+    project_name = _resolve_project_name(job)
+    if not host or not owner or not project_name:
+        return None
+
+    encoded_owner = quote(owner, safe="")
+    encoded_project = quote(project_name, safe="")
+    encoded_run_id = quote(job.domino_job_id, safe="")
+    return f"{host.rstrip('/')}/projects/{encoded_owner}/{encoded_project}/runs/{encoded_run_id}"
+
+
+def _resolve_experiment_id(job: Job) -> Optional[str]:
+    """Best-effort experiment-id lookup for the job's MLflow run."""
+    run_id = (job.experiment_run_id or "").strip()
+    experiment_name = (job.experiment_name or "").strip()
+    if not run_id and not experiment_name:
+        return None
+
+    try:
+        import mlflow
+    except Exception:
+        logger.debug("MLflow unavailable while resolving experiment id for job %s", job.id)
+        return None
+
+    tracking_uri = get_settings().mlflow_tracking_uri or os.environ.get("MLFLOW_TRACKING_URI")
+    try:
+        client = (
+            mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+            if tracking_uri
+            else mlflow.tracking.MlflowClient()
+        )
+    except Exception:
+        logger.debug("Failed creating MLflow client while resolving experiment id for job %s", job.id)
+        return None
+
+    if run_id:
+        try:
+            run = client.get_run(run_id)
+            run_experiment_id = getattr(run.info, "experiment_id", None)
+            if run_experiment_id:
+                return str(run_experiment_id)
+        except Exception:
+            logger.debug("Failed to resolve experiment id from run id for job %s", job.id)
+
+    if experiment_name:
+        try:
+            experiment = client.get_experiment_by_name(experiment_name)
+            if experiment and getattr(experiment, "experiment_id", None):
+                return str(experiment.experiment_id)
+        except Exception:
+            logger.debug("Failed to resolve experiment id from name for job %s", job.id)
+
+    return None
+
+
+def _mlflow_ui_base_url() -> Optional[str]:
+    """Resolve MLflow UI base URL from tracking URI with Domino fallback."""
+    tracking_uri = get_settings().mlflow_tracking_uri or os.environ.get("MLFLOW_TRACKING_URI")
+    if tracking_uri:
+        parsed = urlparse(tracking_uri.strip())
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            path = (parsed.path or "").rstrip("/")
+            for api_suffix in ("/api/2.0/mlflow", "/api/2.0/preview/mlflow"):
+                if path.endswith(api_suffix):
+                    path = path[: -len(api_suffix)]
+                    break
+            return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+    host = _resolve_domino_host()
+    if host:
+        return f"{host.rstrip('/')}/mlflow"
+    return None
+
+
+def _build_experiment_run_url(job: Job, experiment_id: Optional[str]) -> Optional[str]:
+    """Build deep link to MLflow run UI."""
+    if not job.experiment_run_id or not experiment_id:
+        return None
+
+    base_url = _mlflow_ui_base_url()
+    if not base_url:
+        return None
+
+    encoded_experiment_id = quote(str(experiment_id), safe="")
+    encoded_run_id = quote(job.experiment_run_id, safe="")
+    return f"{base_url.rstrip('/')}/#/experiments/{encoded_experiment_id}/runs/{encoded_run_id}"
+
+
+def _attach_external_links(job: Job) -> Job:
+    """Attach computed external URLs used by the Job Overview UI."""
+    experiment_id = _resolve_experiment_id(job)
+    setattr(job, "domino_job_url", _build_domino_job_url(job))
+    setattr(job, "experiment_id", experiment_id)
+    setattr(job, "experiment_run_url", _build_experiment_run_url(job, experiment_id))
+    return job
 
 
 def validate_job_create_request(job_request: JobCreateRequest) -> None:
@@ -260,12 +397,12 @@ async def create_job_with_context(
             domino_job_status=launch_result.get("domino_job_status", "Submitted"),
         )
         refreshed = await crud.get_job(db, job.id)
-        return refreshed or job
+        return _attach_external_links(refreshed or job)
 
     from app.core.job_queue import get_job_queue
 
     await get_job_queue().enqueue(job.id)
-    return job
+    return _attach_external_links(job)
 
 
 async def list_jobs_basic(
@@ -814,7 +951,8 @@ async def get_job_response(db: AsyncSession, job_id: str) -> Job:
     """Get job payload normalized for API response compatibility."""
     job = await get_job_or_404(db, job_id)
     job = await _sync_domino_job_state(db, job, sync_terminal_metadata=True)
-    return normalize_job_leaderboard(job)
+    job = normalize_job_leaderboard(job)
+    return _attach_external_links(job)
 
 
 def extract_metrics_leaderboard(job: Job) -> Optional[list[dict]]:

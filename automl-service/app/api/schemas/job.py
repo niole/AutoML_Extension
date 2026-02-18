@@ -393,6 +393,7 @@ class JobResponse(BaseModel):
     status: str
     execution_target: str = "local"
     domino_job_id: Optional[str] = None
+    domino_job_url: Optional[str] = None
     domino_job_status: Optional[str] = None
     progress: Optional[int] = None
     current_step: Optional[str] = None
@@ -411,7 +412,9 @@ class JobResponse(BaseModel):
     leaderboard: Optional[List[Dict[str, Any]]] = None
     model_path: Optional[str] = None
     experiment_name: Optional[str] = None
+    experiment_id: Optional[str] = None
     experiment_run_id: Optional[str] = None
+    experiment_run_url: Optional[str] = None
     error_message: Optional[str] = None
     advanced_config: Optional[Dict[str, Any]] = None
     timeseries_config: Optional[Dict[str, Any]] = None

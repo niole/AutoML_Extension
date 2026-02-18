@@ -108,7 +108,6 @@ function JobDetail() {
       <JobHeader
         job={job}
         currentStatus={currentStatus}
-        currentDominoStatus={currentDominoStatus}
         cancelIsPending={cancelMutation.isPending}
         showDeployDropdown={showDeployDropdown}
         showActionsDropdown={showActionsDropdown}

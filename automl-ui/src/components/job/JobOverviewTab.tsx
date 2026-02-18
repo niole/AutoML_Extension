@@ -75,7 +75,21 @@ export function JobOverviewTab({ job, isLoading, currentStatus, currentDominoSta
               value={job?.execution_target === 'domino_job' ? 'Domino Job' : 'Local'}
             />
             {job?.domino_job_id && (
-              <MetadataRow label="Domino Job ID" value={job.domino_job_id} mono />
+              <MetadataRow label="Domino Job ID" mono>
+                {job.domino_job_url ? (
+                  <a
+                    href={job.domino_job_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-domino-accent-purple hover:underline break-all"
+                    title="Open Domino Job"
+                  >
+                    {job.domino_job_id}
+                  </a>
+                ) : (
+                  job.domino_job_id
+                )}
+              </MetadataRow>
             )}
             {currentDominoStatus && (
               <MetadataRow label="Domino Job Status" value={currentDominoStatus} />
@@ -84,7 +98,21 @@ export function JobOverviewTab({ job, isLoading, currentStatus, currentDominoSta
               <MetadataRow label="Experiment" value={job.experiment_name} />
             )}
             {job?.experiment_run_id && (
-              <MetadataRow label="MLflow run ID" value={job.experiment_run_id} mono />
+              <MetadataRow label="MLflow run ID" mono>
+                {job.experiment_run_url ? (
+                  <a
+                    href={job.experiment_run_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-domino-accent-purple hover:underline break-all"
+                    title="Open Experiment Run"
+                  >
+                    {job.experiment_run_id}
+                  </a>
+                ) : (
+                  job.experiment_run_id
+                )}
+              </MetadataRow>
             )}
           </tbody>
         </table>

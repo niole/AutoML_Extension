@@ -138,6 +138,7 @@ export interface Job {
   status: JobStatus
   execution_target?: ExecutionTarget
   domino_job_id?: string
+  domino_job_url?: string
   domino_job_status?: string
   progress?: number
   current_step?: string
@@ -156,7 +157,9 @@ export interface Job {
   leaderboard?: LeaderboardModel[]
   model_path?: string
   experiment_name?: string
+  experiment_id?: string
   experiment_run_id?: string
+  experiment_run_url?: string
   error_message?: string
   advanced_config?: AdvancedAutoGluonConfig
   timeseries_config?: TimeSeriesAdvancedConfig
