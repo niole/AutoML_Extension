@@ -36,7 +36,6 @@ export function JobOverviewTab({ job, isLoading, currentStatus, currentDominoSta
             </tr>
           </thead>
           <tbody className="divide-y divide-domino-border">
-            <MetadataRow label="Run ID" value={job?.id || (isLoading ? 'Loading...' : '\u2014')} mono />
             <MetadataRow label="Model type" value={job?.model_type || (isLoading ? 'Loading...' : '\u2014')} capitalize />
             {job?.problem_type && <MetadataRow label="Problem type" value={job.problem_type} capitalize />}
             <MetadataRow label="Target column" value={job?.target_column || (isLoading ? 'Loading...' : '\u2014')} />
