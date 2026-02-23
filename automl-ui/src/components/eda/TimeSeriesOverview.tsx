@@ -102,7 +102,7 @@ function TargetLineChart({ profile }: { profile: TimeSeriesProfile }) {
         </svg>
         {hoverIndex !== null && (
           <div
-            className="absolute top-2 pointer-events-none bg-white border border-gray-200 shadow-sm px-2 py-1.5 text-xs whitespace-nowrap z-10"
+            className="absolute top-2 pointer-events-none bg-white border border-domino-border shadow-sm px-2 py-1.5 text-xs whitespace-nowrap z-10"
             style={getTooltipStyle(toX(hoverIndex), width)}
           >
             <div className="font-medium text-gray-700 mb-0.5">
@@ -241,7 +241,7 @@ export function TimeSeriesOverview({ profile }: TimeSeriesOverviewProps) {
                   <div key={i} className={`p-3 border text-sm ${
                     w.severity === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
                     w.severity === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
-                    'bg-gray-50 border-gray-200 text-gray-700'
+                    'bg-domino-bg-hover border-domino-border text-domino-text-secondary'
                   }`}>
                     {w.message}
                   </div>

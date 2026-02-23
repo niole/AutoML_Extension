@@ -39,6 +39,9 @@ automl-ui/.env
 # Claude Code
 .claude/
 
+# Plans
+plans/
+
 # Domino
 domino.log
 dominodump-*

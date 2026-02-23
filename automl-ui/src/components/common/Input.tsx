@@ -15,7 +15,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-domino-text-secondary mb-1"
+            className="block text-sm font-medium text-[#3F4547] mb-1"
           >
             {label}
           </label>
@@ -24,11 +24,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           className={clsx(
-            'w-full h-[32px] px-[11px] bg-white rounded-[2px] text-domino-text-primary placeholder-domino-text-muted text-sm',
+            'w-full h-[32px] px-[11px] bg-white rounded-[4px] text-domino-text-primary placeholder-domino-text-secondary text-sm',
             'border transition-all duration-200',
-            'focus:outline-none focus:border-domino-accent-purple',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-            error ? 'border-domino-accent-red' : 'border-[#d9d9d9]',
+            'focus:outline-none focus:border-[#3B3BD3] focus:shadow-[0_0_0_2px_rgba(59,59,211,0.1)]',
+            'disabled:bg-[#F5F5F5] disabled:text-[#7F8385] disabled:cursor-not-allowed',
+            error ? 'border-domino-accent-red' : 'border-domino-border',
             className
           )}
           {...props}

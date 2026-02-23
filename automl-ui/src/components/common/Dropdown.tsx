@@ -48,7 +48,7 @@ export function Dropdown({
   return (
     <div className={clsx('relative', className)} ref={dropdownRef}>
       {label && (
-        <label className="block text-sm font-medium text-domino-text-secondary mb-1">
+        <label className="block text-sm font-medium text-[#7F8385] mb-1">
           {label}
         </label>
       )}
@@ -57,11 +57,11 @@ export function Dropdown({
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         className={clsx(
-          'w-full h-[32px] px-3 bg-white text-left text-sm',
-          'border border-[#d9d9d9] flex items-center justify-between',
+          'w-full h-[32px] px-3 bg-white rounded-[4px] text-left text-sm',
+          'border border-domino-border flex items-center justify-between',
           'transition-all duration-200',
-          'hover:border-domino-accent-purple focus:outline-none focus:border-domino-accent-purple',
-          disabled && 'opacity-50 cursor-not-allowed',
+          'hover:border-[#3B3BD3] focus:outline-none focus:border-[#3B3BD3] focus:shadow-[0_0_0_2px_rgba(59,59,211,0.1)]',
+          disabled && 'bg-[#F5F5F5] cursor-not-allowed text-[#7F8385]',
           !disabled && 'cursor-pointer'
         )}
       >
@@ -82,17 +82,17 @@ export function Dropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 shadow-lg z-50 max-h-60 overflow-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-domino-border rounded-[4px] shadow-lg z-50 max-h-60 overflow-auto py-1">
           {options.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => handleSelect(option.value)}
               className={clsx(
-                'w-full px-3 py-2 text-left text-sm transition-colors',
-                'hover:bg-domino-bg-tertiary',
+                'w-full px-3 py-[6px] text-left text-sm transition-colors',
+                'hover:bg-[#EDECFB]',
                 option.value === value
-                  ? 'text-domino-accent-purple bg-domino-bg-tertiary'
+                  ? 'text-[#3B3BD3] bg-[#EDECFB] font-medium'
                   : 'text-domino-text-primary'
               )}
             >

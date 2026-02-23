@@ -16,6 +16,7 @@ import { useJobProgress } from '../hooks/useJobProgress'
 import { JobHeader } from '../components/job/JobHeader'
 import { JobTabNavigation } from '../components/job/JobTabNavigation'
 import { JobOverviewTab } from '../components/job/JobOverviewTab'
+import { DominoIntegrationsTab } from '../components/job/DominoIntegrationsTab'
 import type { DetailTab } from '../components/job/JobTabNavigation'
 
 function JobDetail() {
@@ -179,6 +180,10 @@ function JobDetail() {
 
       {activeTab === 'forecast' && currentStatus === 'completed' && job?.model_type === 'timeseries' && (
         <TimeSeriesForecastPanel job={job} />
+      )}
+
+      {activeTab === 'domino' && currentStatus === 'completed' && job && (
+        <DominoIntegrationsTab job={job} />
       )}
 
       {activeTab === 'logs' && (

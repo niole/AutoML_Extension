@@ -21,12 +21,22 @@
   --domino-bg-secondary: #f5f5f5;
   --domino-bg-tertiary: #f0f0f0;
   --domino-bg-hover: #fafafa;
-  --domino-text-primary: #2E2E38;
-  --domino-text-secondary: #65657B;
-  --domino-text-muted: #8F8FA3;
-  --domino-accent-purple-light: #f0ebff;
-  --domino-border: #e5e5e5;
-  --domino-border-muted: #f0f0f0;
+  --domino-text-primary: #3F4547;
+  --domino-text-secondary: #7F8385;
+  --domino-text-muted: #A0A4A6;
+  --domino-border: #DBE4E8;
+  --domino-border-muted: #E8ECEE;
+  --domino-primary: #3B3BD3;
+  --domino-primary-hover: #2E2EA8;
+  --domino-primary-active: #24247D;
+  --domino-on-primary: #FFFFFF;
+  --domino-secondary-surface: #EDECFB;
+  --domino-secondary-border: #C9C5F2;
+  --domino-secondary-text: #1820A0;
+  --domino-success: #28A464;
+  --domino-warning: #CCB718;
+  --domino-danger: #C20A29;
+  --domino-info: #0070CC;
 }
 
 @layer base {
@@ -66,26 +76,69 @@
     @apply inline-flex items-center justify-center font-normal transition-all duration-200 focus:outline-none whitespace-nowrap text-center select-none;
     height: 32px;
     padding: 4px 15px;
-    border-radius: 2px;
+    border-radius: 4px;
     font-size: 14px;
     line-height: 1.5714285714285714;
     border: 1px solid transparent;
   }
 
   .btn-primary {
-    @apply btn bg-domino-accent-purple text-white hover:bg-domino-accent-purple-hover;
+    @apply btn text-white;
+    background-color: var(--domino-primary);
     box-shadow: none;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--domino-primary-hover);
+  }
+
+  .btn-primary:active {
+    background-color: var(--domino-primary-active);
   }
 
   .btn-secondary {
-    @apply btn bg-white text-domino-text-primary hover:border-domino-accent-purple hover:text-domino-accent-purple;
-    border-color: #d9d9d9;
+    @apply btn;
+    background-color: var(--domino-secondary-surface);
+    border-color: var(--domino-secondary-border);
+    color: var(--domino-secondary-text);
     box-shadow: none;
   }
 
+  .btn-secondary:hover {
+    background-color: #E2E0F8;
+  }
+
+  .btn-tertiary {
+    @apply btn;
+    background-color: transparent;
+    color: var(--domino-primary);
+  }
+
+  .btn-tertiary:hover {
+    background-color: var(--domino-secondary-surface);
+  }
+
+  .btn-outline {
+    @apply btn bg-white;
+    border-color: var(--domino-border);
+    color: var(--domino-primary);
+  }
+
+  .btn-outline:hover {
+    border-color: var(--domino-primary);
+  }
+
   .btn-danger {
-    @apply btn bg-domino-accent-red text-white hover:bg-domino-accent-red/90;
+    @apply btn bg-domino-accent-red text-white;
     box-shadow: none;
+  }
+
+  .btn-danger:hover {
+    background-color: #9B0821;
+  }
+
+  .btn-danger:active {
+    background-color: #740618;
   }
 
   .card {
@@ -94,18 +147,27 @@
   }
 
   .input {
-    @apply w-full bg-white text-domino-text-primary placeholder-domino-text-muted focus:outline-none focus:border-domino-accent-purple;
+    @apply w-full bg-white text-domino-text-primary focus:outline-none;
     height: 32px;
     padding: 4px 11px;
-    border: 1px solid #d9d9d9;
-    border-radius: 2px;
+    border: 1px solid var(--domino-border);
+    border-radius: 4px;
     font-size: 14px;
     line-height: 1.5714285714285714;
     transition: all 0.2s;
   }
 
+  .input::placeholder {
+    color: var(--domino-text-secondary);
+  }
+
+  .input:focus {
+    border-color: var(--domino-primary);
+    box-shadow: 0 0 0 2px rgba(59, 59, 211, 0.1);
+  }
+
   .label {
-    @apply block text-sm font-semibold text-domino-text-primary mb-1;
+    @apply block text-sm font-medium text-domino-text-primary mb-1;
   }
 
   .badge {
@@ -113,22 +175,40 @@
   }
 
   .badge-pending {
-    @apply badge bg-domino-accent-yellow/20 text-domino-accent-yellow;
+    @apply badge;
+    background-color: rgba(204, 183, 24, 0.15);
+    color: #998A12;
   }
 
   .badge-running {
-    @apply badge bg-domino-accent-purple/20 text-domino-accent-purple;
+    @apply badge;
+    background-color: rgba(59, 59, 211, 0.1);
+    color: #3B3BD3;
   }
 
   .badge-completed {
-    @apply badge bg-domino-accent-green/20 text-domino-accent-green;
+    @apply badge;
+    background-color: rgba(40, 164, 100, 0.15);
+    color: #1A7A4A;
   }
 
   .badge-failed {
-    @apply badge bg-domino-accent-red/20 text-domino-accent-red;
+    @apply badge;
+    background-color: rgba(194, 10, 41, 0.1);
+    color: #C20A29;
   }
 
   .badge-cancelled {
-    @apply badge bg-domino-text-muted/20 text-domino-text-muted;
+    @apply badge;
+    background-color: rgba(127, 131, 133, 0.15);
+    color: #7F8385;
   }
+}
+
+/* Ant Design table overrides */
+.ant-table-wrapper .ant-table-row.ant-table-row-selected > td {
+  background-color: rgba(59, 59, 211, 0.08) !important;
+}
+.ant-table-wrapper .ant-table-row.ant-table-row-selected:hover > td {
+  background-color: rgba(59, 59, 211, 0.12) !important;
 }

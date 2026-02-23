@@ -110,7 +110,7 @@ export function ModelDiagnosticsPanel({ job }: ModelDiagnosticsPanelProps) {
   return (
     <div className="space-y-4">
       {/* Tab Navigation */}
-      <div className="flex space-x-2 border-b border-gray-200 pb-2">
+      <div className="flex space-x-2 border-b border-domino-border pb-2">
         {tabs.map((tab) => (
           <Button
             key={tab.key}
@@ -339,7 +339,7 @@ function ClassificationMetrics({ confusionMatrix, rocCurve, loading, isBinary }:
                     </td>
                     {row.map((cell, j) => {
                       const intensity = cell / maxValue
-                      // Domino colors: purple (#543FDE) for diagonal, red (#C20A29) for off-diagonal
+                      // Domino colors: purple (#3B3BD3) for diagonal, red (#C20A29) for off-diagonal
                       const bgColor = i === j
                         ? `rgba(84, 63, 222, ${0.15 + intensity * 0.5})`  // Domino purple for diagonal
                         : `rgba(194, 10, 41, ${intensity * 0.4})`  // Domino red for off-diagonal

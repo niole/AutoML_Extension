@@ -210,7 +210,7 @@ function ActionsDropdown({ isOpen, onToggle, onClose, onDelete }: ActionsDropdow
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-40 bg-white shadow-lg border border-[#d9d9d9] py-1 z-[100]">
+        <div className="absolute right-0 mt-1 w-40 bg-white shadow-lg border border-domino-border py-1 z-[100]">
           <button
             onClick={onDelete}
             className="w-full px-4 py-2 text-left text-sm text-domino-accent-red hover:bg-domino-bg-tertiary transition-colors"

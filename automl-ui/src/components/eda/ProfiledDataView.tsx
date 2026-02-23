@@ -178,7 +178,7 @@ export function ProfiledDataView({
               <select
                 value={localStrategy}
                 onChange={(e) => setLocalStrategy(e.target.value)}
-                className="h-[28px] px-2 text-xs border border-[#d9d9d9] rounded-[2px] bg-white"
+                className="h-[28px] px-2 text-xs border border-domino-border rounded-[2px] bg-white"
               >
                 <option value="random">Random</option>
                 <option value="stratified">Stratified</option>
@@ -192,7 +192,7 @@ export function ProfiledDataView({
                 type="number"
                 value={localSampleSize}
                 onChange={(e) => setLocalSampleSize(e.target.value)}
-                className="h-[28px] w-[100px] px-2 text-xs border border-[#d9d9d9] rounded-[2px]"
+                className="h-[28px] w-[100px] px-2 text-xs border border-domino-border rounded-[2px]"
                 disabled={localStrategy === 'full'}
               />
             </div>
@@ -202,7 +202,7 @@ export function ProfiledDataView({
                 <select
                   value={localStratifyCol}
                   onChange={(e) => setLocalStratifyCol(e.target.value)}
-                  className="h-[28px] px-2 text-xs border border-[#d9d9d9] rounded-[2px] bg-white"
+                  className="h-[28px] px-2 text-xs border border-domino-border rounded-[2px] bg-white"
                 >
                   <option value="">Select column...</option>
                   {profile.columns.map((col) => (
@@ -432,14 +432,14 @@ function DataPreviewContent({
           <button
             onClick={() => onPageChange(1)}
             disabled={currentPage === 1}
-            className="h-[32px] px-3 text-sm border border-[#d9d9d9] rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
+            className="h-[32px] px-3 text-sm border border-domino-border rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
           >
             First
           </button>
           <button
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
-            className="h-[32px] w-[32px] flex items-center justify-center border border-[#d9d9d9] rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
+            className="h-[32px] w-[32px] flex items-center justify-center border border-domino-border rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
           >
             &lt;
           </button>
@@ -449,14 +449,14 @@ function DataPreviewContent({
           <button
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
-            className="h-[32px] w-[32px] flex items-center justify-center border border-[#d9d9d9] rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
+            className="h-[32px] w-[32px] flex items-center justify-center border border-domino-border rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
           >
             &gt;
           </button>
           <button
             onClick={() => onPageChange(totalPages)}
             disabled={currentPage === totalPages}
-            className="h-[32px] px-3 text-sm border border-[#d9d9d9] rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
+            className="h-[32px] px-3 text-sm border border-domino-border rounded-[2px] text-domino-text-secondary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-domino-bg-tertiary"
           >
             Last
           </button>

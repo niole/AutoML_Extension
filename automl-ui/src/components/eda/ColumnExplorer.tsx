@@ -50,9 +50,9 @@ export function ColumnExplorer({ columns, filePath: _filePath }: ColumnExplorerP
       case 'text':
         return 'bg-orange-100 text-orange-700 border-orange-200'
       case 'identifier':
-        return 'bg-gray-100 text-gray-700 border-gray-200'
+        return 'bg-gray-100 text-gray-700 border-domino-border'
       default:
-        return 'bg-gray-100 text-gray-600 border-gray-200'
+        return 'bg-gray-100 text-gray-600 border-domino-border'
     }
   }
 

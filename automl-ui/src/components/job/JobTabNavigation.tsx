@@ -1,4 +1,4 @@
-type DetailTab = 'overview' | 'progress' | 'leaderboard' | 'diagnostics' | 'learning' | 'forecast' | 'export' | 'logs'
+type DetailTab = 'overview' | 'progress' | 'leaderboard' | 'diagnostics' | 'learning' | 'forecast' | 'export' | 'domino' | 'logs'
 
 interface TabConfig {
   key: string
@@ -21,6 +21,7 @@ const allTabs: TabConfig[] = [
   { key: 'learning', label: 'Metrics', showWhenDone: true },
   { key: 'forecast', label: 'Forecast', showWhenDone: true, showForTimeseries: true },
   { key: 'export', label: 'Outputs', showWhenDone: true },
+  { key: 'domino', label: 'Deployments', showWhenDone: true },
   { key: 'logs', label: 'Logs' },
 ]
 

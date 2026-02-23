@@ -55,7 +55,7 @@ export function DashboardFilters({
           </Link>
           <button
             onClick={onStorageCleanupClick}
-            className="h-[32px] px-[15px] bg-white text-domino-text-primary text-sm font-normal rounded-[2px] border border-[#d9d9d9] hover:border-domino-accent-purple hover:text-domino-accent-purple transition-all duration-200 inline-flex items-center gap-2"
+            className="h-[32px] px-[15px] bg-[#EDECFB] text-[#1820A0] text-sm font-normal rounded-[4px] border border-[#C9C5F2] hover:bg-[#E2E0F8] transition-all duration-200 inline-flex items-center gap-2"
           >
             <ArchiveBoxXMarkIcon className="h-4 w-4" />
             Storage cleanup
@@ -73,7 +73,7 @@ export function DashboardFilters({
             placeholder="Search job name"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-[11px] pr-9 h-[32px] w-[220px] text-sm border border-[#d9d9d9] rounded-[2px] bg-white text-domino-text-primary placeholder-domino-text-muted focus:outline-none focus:border-domino-accent-purple transition-all duration-200"
+            className="pl-[11px] pr-9 h-[32px] w-[220px] text-sm border border-domino-border rounded-[2px] bg-white text-domino-text-primary placeholder-domino-text-muted focus:outline-none focus:border-domino-accent-purple transition-all duration-200"
           />
         </div>
 
@@ -109,7 +109,7 @@ export function DashboardFilters({
         <div className="flex-1" />
 
         {/* View toggle */}
-        <div className="flex border border-[#d9d9d9] rounded-[2px] overflow-hidden">
+        <div className="flex border border-domino-border rounded-[2px] overflow-hidden">
           <button
             onClick={() => onViewModeChange('table')}
             className={`h-[32px] w-[32px] flex items-center justify-center ${viewMode === 'table' ? 'bg-domino-bg-tertiary' : 'bg-white hover:bg-domino-bg-tertiary'}`}
@@ -119,7 +119,7 @@ export function DashboardFilters({
           </button>
           <button
             onClick={() => onViewModeChange('card')}
-            className={`h-[32px] w-[32px] flex items-center justify-center border-l border-[#d9d9d9] ${viewMode === 'card' ? 'bg-domino-bg-tertiary' : 'bg-white hover:bg-domino-bg-tertiary'}`}
+            className={`h-[32px] w-[32px] flex items-center justify-center border-l border-domino-border ${viewMode === 'card' ? 'bg-domino-bg-tertiary' : 'bg-white hover:bg-domino-bg-tertiary'}`}
             title="Card view"
           >
             <Squares2X2Icon className="h-4 w-4 text-domino-text-secondary" />

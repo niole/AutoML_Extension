@@ -107,7 +107,7 @@ export function TimeSeriesConfigPanel({
             value={rollingWindow}
             onChange={(e) => onRollingWindowChange(e.target.value)}
             placeholder="Auto"
-            className="h-[32px] w-full px-2 text-sm border border-[#d9d9d9] rounded-[2px]"
+            className="h-[32px] w-full px-2 text-sm border border-domino-border rounded-[2px]"
           />
         </div>
         <div className="flex items-end">
@@ -124,7 +124,7 @@ export function TimeSeriesConfigPanel({
       {needsSampling && (
         <div className="flex items-center gap-4 pt-2 border-t border-domino-border flex-wrap">
           <span className="text-xs text-domino-text-secondary font-medium">Sampling:</span>
-          <div className="flex items-center border border-[#d9d9d9] rounded-[2px] overflow-hidden">
+          <div className="flex items-center border border-domino-border rounded-[2px] overflow-hidden">
             {(['recent', 'oldest', 'uniform', 'full'] as const).map((s) => (
               <button
                 key={s}
@@ -146,7 +146,7 @@ export function TimeSeriesConfigPanel({
                 type="number"
                 value={sampleSize}
                 onChange={(e) => setSampleSize(e.target.value)}
-                className="h-[26px] w-[90px] px-2 text-xs border border-[#d9d9d9] rounded-[2px]"
+                className="h-[26px] w-[90px] px-2 text-xs border border-domino-border rounded-[2px]"
               />
             </div>
           )}

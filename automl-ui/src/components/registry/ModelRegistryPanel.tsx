@@ -109,7 +109,7 @@ export function ModelRegistryPanel({ onModelSelect }: ModelRegistryPanelProps) {
                 className={`p-3 rounded-lg cursor-pointer transition-colors ${
                   selectedModel === model.name
                     ? 'bg-blue-100 border border-blue-300'
-                    : 'bg-gray-50 hover'
+                    : 'bg-domino-bg-hover hover'
                 }`}
                 onClick={() => setSelectedModel(model.name)}
               >
@@ -457,7 +457,7 @@ export function RegisterModelDialog({ jobId, modelPath, onClose, onSuccess }: Re
               <div>
                 <label className="label">Description</label>
                 <textarea
-                  className="w-full px-[11px] py-[4px] border border-[#d9d9d9] rounded-[2px] text-sm text-domino-text-primary placeholder-domino-text-muted focus:outline-none focus:border-domino-accent-purple transition-all duration-200"
+                  className="w-full px-[11px] py-[4px] border border-domino-border rounded-[2px] text-sm text-domino-text-primary placeholder-domino-text-muted focus:outline-none focus:border-domino-accent-purple transition-all duration-200"
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}

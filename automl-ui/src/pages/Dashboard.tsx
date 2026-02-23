@@ -188,13 +188,13 @@ function Dashboard() {
       {filteredJobs.length > 0 && (
         <div className="flex items-center justify-end gap-2 mt-4 text-sm text-domino-text-secondary">
           <span>Showing 1–{filteredJobs.length} out of {filteredJobs.length}</span>
-          <button className="h-[32px] w-[32px] flex items-center justify-center border border-[#d9d9d9] rounded-[2px] text-domino-text-muted" disabled>
+          <button className="h-[32px] w-[32px] flex items-center justify-center border border-domino-border rounded-[2px] text-domino-text-muted" disabled>
             &lt;
           </button>
           <button className="h-[32px] w-[32px] flex items-center justify-center border border-domino-accent-purple rounded-[2px] text-domino-accent-purple">
             1
           </button>
-          <button className="h-[32px] w-[32px] flex items-center justify-center border border-[#d9d9d9] rounded-[2px] text-domino-text-muted" disabled>
+          <button className="h-[32px] w-[32px] flex items-center justify-center border border-domino-border rounded-[2px] text-domino-text-muted" disabled>
             &gt;
           </button>
         </div>

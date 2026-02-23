@@ -143,7 +143,7 @@ function ACFBarChart({
         </svg>
         {hoverBar !== null && (
           <div
-            className="absolute top-2 pointer-events-none bg-white border border-gray-200 shadow-sm px-2 py-1.5 text-xs whitespace-nowrap z-10"
+            className="absolute top-2 pointer-events-none bg-white border border-domino-border shadow-sm px-2 py-1.5 text-xs whitespace-nowrap z-10"
             style={getTooltipStyle(tooltipX, width)}
           >
             <div className="font-medium text-gray-700">Lag {hoverBar + 1}: {displayValues[hoverBar].toFixed(4)}</div>

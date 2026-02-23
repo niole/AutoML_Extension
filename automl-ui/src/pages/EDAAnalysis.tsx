@@ -299,7 +299,7 @@ function EDAAnalysis() {
 
       {/* Mode Toggle */}
       <div className="flex items-center gap-4">
-        <div className="flex items-center border border-[#d9d9d9] rounded-[2px] overflow-hidden">
+        <div className="flex items-center border border-domino-border rounded-[2px] overflow-hidden">
           <button
             onClick={() => setEdaMode('tabular')}
             className={`px-4 py-1.5 text-sm font-medium ${
@@ -312,7 +312,7 @@ function EDAAnalysis() {
           </button>
           <button
             onClick={() => setEdaMode('timeseries')}
-            className={`px-4 py-1.5 text-sm font-medium border-l border-[#d9d9d9] ${
+            className={`px-4 py-1.5 text-sm font-medium border-l border-domino-border ${
               edaMode === 'timeseries'
                 ? 'bg-domino-accent-purple text-white'
                 : 'bg-white text-domino-text-secondary hover:bg-domino-bg-tertiary'
@@ -336,7 +336,7 @@ function EDAAnalysis() {
         <select
           value={edaExecutionTarget}
           onChange={(e) => setEdaExecutionTarget(e.target.value as 'local' | 'domino_job')}
-          className="h-[32px] px-3 text-sm border border-[#d9d9d9] rounded-[2px] bg-white"
+          className="h-[32px] px-3 text-sm border border-domino-border rounded-[2px] bg-white"
         >
           <option value="local">Local (In App)</option>
           <option value="domino_job">Domino Job</option>

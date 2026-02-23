@@ -82,7 +82,7 @@ export function JobHeader({
               </svg>
             </button>
             {showDeployDropdown && (
-              <div className="absolute right-0 mt-1 w-72 bg-white shadow-lg border border-gray-200 py-1 z-50">
+              <div className="absolute right-0 mt-1 w-72 bg-white shadow-lg border border-domino-border py-1 z-50">
                 <button
                   onClick={onOpenRegisterDialog}
                   className="w-full px-4 py-2 text-left text-sm text-domino-text-primary hover:bg-domino-bg-tertiary flex items-center gap-2 transition-colors"
@@ -111,7 +111,7 @@ export function JobHeader({
         <div className="relative" ref={actionsDropdownRef}>
           <button
             onClick={onToggleActionsDropdown}
-            className="h-[32px] w-[32px] flex items-center justify-center border border-[#d9d9d9] rounded-[2px] text-domino-text-secondary hover:border-domino-accent-purple hover:text-domino-accent-purple transition-all duration-200"
+            className="h-[32px] w-[32px] flex items-center justify-center border border-domino-border rounded-[2px] text-domino-text-secondary hover:border-domino-accent-purple hover:text-domino-accent-purple transition-all duration-200"
           >
             <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
               <circle cx="8" cy="3" r="1.5" />
@@ -120,7 +120,7 @@ export function JobHeader({
             </svg>
           </button>
           {showActionsDropdown && (
-            <div className="absolute right-0 mt-1 w-40 bg-white shadow-lg border border-gray-200 py-1 z-50">
+            <div className="absolute right-0 mt-1 w-40 bg-white shadow-lg border border-domino-border py-1 z-50">
               <button
                 onClick={onOpenDeleteConfirm}
                 className="w-full px-4 py-2 text-left text-sm text-domino-accent-red hover:bg-domino-bg-tertiary transition-colors"

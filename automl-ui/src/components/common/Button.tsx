@@ -2,21 +2,23 @@ import { ButtonHTMLAttributes, forwardRef } from 'react'
 import clsx from 'clsx'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline' | 'tertiary' | 'link'
   size?: 'sm' | 'md' | 'lg'
   isLoading?: boolean
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'primary', size = 'md', isLoading, children, disabled, ...props }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center font-medium whitespace-nowrap text-center transition-all duration-200 select-none rounded disabled:cursor-not-allowed'
+    const baseStyles = 'inline-flex items-center justify-center font-medium whitespace-nowrap text-center transition-all duration-200 select-none rounded-[4px] disabled:cursor-not-allowed'
 
     const variants = {
-      primary: 'bg-domino-accent-purple text-white hover:bg-domino-accent-purple-hover border border-transparent disabled:opacity-60',
-      secondary: 'bg-white text-domino-text-primary hover:border-domino-accent-purple hover:text-domino-accent-purple border border-[#d9d9d9] disabled:opacity-50',
-      outline: 'bg-white text-domino-accent-purple hover:bg-domino-accent-purple/5 border border-domino-accent-purple disabled:opacity-50',
-      danger: 'bg-domino-accent-red text-white hover:bg-domino-accent-red/90 border border-transparent disabled:opacity-60',
-      ghost: 'text-domino-text-secondary hover:text-domino-text-primary hover:bg-domino-bg-tertiary border border-transparent disabled:opacity-50',
+      primary: 'bg-[#3B3BD3] text-white hover:bg-[#2E2EA8] active:bg-[#24247D] border border-transparent disabled:bg-[#DBE4E8] disabled:text-[#7F8385]',
+      secondary: 'bg-[#EDECFB] text-[#1820A0] hover:bg-[#E2E0F8] border border-[#C9C5F2] disabled:bg-[#F5F5F5] disabled:text-[#7F8385] disabled:border-[#DBE4E8]',
+      outline: 'bg-white text-[#3B3BD3] hover:border-[#3B3BD3] border border-[#DBE4E8] disabled:bg-[#F5F5F5] disabled:text-[#7F8385]',
+      danger: 'bg-[#C20A29] text-white hover:bg-[#9B0821] active:bg-[#740618] border border-transparent disabled:bg-[#DBE4E8] disabled:text-[#7F8385]',
+      ghost: 'text-[#7F8385] hover:text-[#3F4547] hover:bg-[#F5F5F5] border border-transparent disabled:opacity-50',
+      tertiary: 'bg-transparent text-[#3B3BD3] hover:bg-[#EDECFB] border border-transparent disabled:text-[#7F8385]',
+      link: 'bg-transparent text-[#3B3BD3] hover:underline border border-transparent disabled:text-[#7F8385] p-0 h-auto',
     }
 
     const sizes = {
@@ -28,7 +30,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
-        className={clsx(baseStyles, variants[variant], sizes[size], className)}
+        className={clsx(baseStyles, variants[variant], variant !== 'link' && sizes[size], className)}
         disabled={disabled || isLoading}
         {...props}
       >

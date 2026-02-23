@@ -119,7 +119,7 @@ function SVGLineChart({
         </svg>
         {hoverIndex !== null && (
           <div
-            className="absolute top-2 pointer-events-none bg-white border border-gray-200 shadow-sm px-2 py-1.5 text-xs whitespace-nowrap z-10"
+            className="absolute top-2 pointer-events-none bg-white border border-domino-border shadow-sm px-2 py-1.5 text-xs whitespace-nowrap z-10"
             style={getTooltipStyle(toX(hoverIndex, maxLen), width)}
           >
             <div className="font-medium text-gray-700 mb-0.5">
