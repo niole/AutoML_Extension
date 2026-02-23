@@ -43,36 +43,8 @@ The AutoML Extension is a full-stack web application that runs as a Domino App. 
 
 ### Architecture (High-Level)
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                        Domino Platform                         │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  AutoML Extension (Domino App)                           │  │
-│  │                                                          │  │
-│  │  ┌────────────┐  HTTP/WS   ┌──────────────────────────┐  │  │
-│  │  │  Frontend  │◄──────────►│  Backend                 │  │  │
-│  │  │  React SPA │            │  FastAPI + Uvicorn       │  │  │
-│  │  │  (static)  │            │                          │  │  │
-│  │  └────────────┘            │  ┌────────────────────┐  │  │  │
-│  │                            │  │ SQLite (aiosqlite) │  │  │  │
-│  │                            │  └────────────────────┘  │  │  │
-│  │                            │  ┌────────────────────┐  │  │  │
-│  │                            │  │ AutoGluon          │  │  │  │
-│  │                            │  │ (in-process)       │  │  │  │
-│  │                            │  └────────────────────┘  │  │  │
-│  │                            └──────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                               │                                │
-│           ┌───────────────────┼─────────────┐                  │
-│           ▼                   ▼             ▼                  │
-│   ┌───────────────┐ ┌────────────┐ ┌─────────────────┐         │
-│   │ Domino APIs   │ │ MLflow     │ │ /mnt/data       │         │
-│   │ (Jobs, Model  │ │ Tracking   │ │ (Shared Storage)│         │
-│   │  APIs, etc.)  │ │ Server     │ │                 │         │
-│   └───────────────┘ └────────────┘ └─────────────────┘         │
-└────────────────────────────────────────────────────────────────┘
-```
+![Architecture Diagram](architecture-high-level.png)
+
 
 ---
 
@@ -257,28 +229,8 @@ Fallback: `"anonymous"` when the header is absent (local development).
 
 The extension supports multiple auth mechanisms to work across Domino contexts (Apps, Workspaces, Jobs):
 
-```
-┌────────────────────────────────────────────────────┐
-│       Model API Auth Resolution Chain              │
-│       (domino_model_api.py _get_auth_headers)      │
-│                                                    │
-│  0. API_KEY_OVERRIDE env var                       │
-│     └─► X-Domino-Api-Key header (bypasses chain)   │
-│                                                    │
-│  1. Ephemeral token (localhost:8899)               │
-│     └─► Authorization: Bearer header               │
-│                                                    │
-│  2. DOMINO_API_KEY env var                         │
-│     └─► X-Domino-Api-Key header                    │
-│                                                    │
-│  3. DOMINO_USER_API_KEY env var (legacy)           │
-│     └─► X-Domino-Api-Key header                    │
-│                                                    │
-│  4. DOMINO_TOKEN_FILE (read file contents)         │
-│     └─► X-Domino-Api-Key header (via              │
-│         effective_api_key)                          │
-└────────────────────────────────────────────────────┘
-```
+![Auth Resolution Chain](auth-flow.png)
+
 
 The `python-domino` SDK client has its own resolution order: `DOMINO_API_PROXY` → `DOMINO_TOKEN_FILE` → `DOMINO_USER_API_KEY` → `effective_api_key` as bearer token.
 
