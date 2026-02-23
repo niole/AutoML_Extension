@@ -5,12 +5,12 @@ import logging
 import tempfile
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
-from datetime import datetime
 
 import mlflow
 from mlflow import MlflowClient
 
 from app.config import get_settings
+from app.core.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ class DominoModelRegistry:
                 mlflow.set_tag("model_type", model_type)
                 mlflow.set_tag("framework", "autogluon")
                 mlflow.set_tag("registered_by", "automl-service")
-                mlflow.set_tag("registration_time", datetime.utcnow().isoformat())
+                mlflow.set_tag("registration_time", utc_now().isoformat())
 
                 if tags:
                     for key, value in tags.items():
@@ -486,7 +486,7 @@ class DominoModelRegistry:
 - **Type**: {job_info.get('model_type', 'Unknown')}
 - **Problem Type**: {job_info.get('problem_type', 'Unknown')}
 - **Framework**: AutoGluon
-- **Created**: {datetime.utcnow().isoformat()}
+- **Created**: {utc_now().isoformat()}
 
 ## Training Configuration
 - **Dataset**: {job_info.get('dataset_id', 'Unknown')}

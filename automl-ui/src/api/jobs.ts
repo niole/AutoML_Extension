@@ -89,6 +89,16 @@ export async function deleteJob(jobId: string): Promise<void> {
   await api.post('/jobdelete', { job_id: jobId })
 }
 
+export interface BulkDeleteJobsResponse {
+  deleted_job_ids: string[]
+  failed: { job_id: string; error: string }[]
+}
+
+export async function bulkDeleteJobs(jobIds: string[]): Promise<BulkDeleteJobsResponse> {
+  const response = await api.post<BulkDeleteJobsResponse>('/jobbulkdelete', { job_ids: jobIds })
+  return response.data
+}
+
 export async function getOrphanPreview(): Promise<OrphanPreviewResponse> {
   const response = await api.post<OrphanPreviewResponse>('/joborphans', {})
   return response.data

@@ -102,7 +102,7 @@ function Step3Configuration() {
             label="Execution Target"
             options={[
               { value: 'local', label: 'Local (In-App Queue)' },
-              { value: 'domino_job', label: 'Domino Job (External)' },
+              { value: 'domino_job', label: 'Domino Job' },
             ]}
             value={localConfig.executionTarget}
             onChange={(e) =>

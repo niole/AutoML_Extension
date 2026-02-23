@@ -490,6 +490,28 @@ class CleanupRequest(BaseModel):
     )
 
 
+class BulkDeleteJobsRequest(BaseModel):
+    """Request schema for bulk job deletion."""
+
+    job_ids: List[str] = Field(
+        ..., min_length=1,
+        description="List of job IDs to delete",
+    )
+
+
+class BulkDeleteJobsResponse(BaseModel):
+    """Response schema for bulk job deletion."""
+
+    deleted_job_ids: List[str] = Field(
+        default_factory=list,
+        description="IDs of successfully deleted jobs",
+    )
+    failed: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="Jobs that failed to delete, with job_id and error",
+    )
+
+
 class JobListResponse(BaseModel):
     """Response schema for job list."""
 

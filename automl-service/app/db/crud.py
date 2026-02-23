@@ -6,6 +6,8 @@ from typing import Optional, Sequence
 from sqlalchemy import select, update, desc, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import utc_now
+
 from app.db.models import (
     Job,
     JobLog,
@@ -210,7 +212,7 @@ async def update_job_results(
         "leaderboard": leaderboard,
         "model_path": model_path,
         "status": JobStatus.COMPLETED,
-        "completed_at": datetime.utcnow(),
+        "completed_at": utc_now(),
         "progress": 100,
         "current_step": "Complete",
     }
@@ -332,7 +334,7 @@ async def get_jobs_for_cleanup(
     """Get jobs matching statuses and optional age filter, ordered by created_at."""
     query = select(Job).where(Job.status.in_(statuses))
     if older_than_days is not None:
-        cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+        cutoff = utc_now() - timedelta(days=older_than_days)
         query = query.where(Job.created_at < cutoff)
     return (await db.execute(query.order_by(Job.created_at))).scalars().all()
 

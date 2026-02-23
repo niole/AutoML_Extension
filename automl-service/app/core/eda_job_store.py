@@ -1,16 +1,16 @@
 """File-backed metadata/result store for async EDA jobs."""
 
 import json
-from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
 from app.config import get_settings
+from app.core.utils import utc_now
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now().isoformat()
 
 
 class EDAJobStore:

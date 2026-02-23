@@ -339,7 +339,7 @@ function EDAAnalysis() {
           className="h-[32px] px-3 text-sm border border-[#d9d9d9] rounded-[2px] bg-white"
         >
           <option value="local">Local (In App)</option>
-          <option value="domino_job">Domino Job (External)</option>
+          <option value="domino_job">Domino Job</option>
         </select>
       </div>
 

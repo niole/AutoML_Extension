@@ -31,16 +31,38 @@ function getExecutionTarget(job: Job): string {
 interface JobTableViewProps {
   jobs: Job[]
   onDeleteRequest: (job: Job) => void
+  selectedIds: Set<string>
+  isAllSelected: boolean
+  isIndeterminate: boolean
+  onToggleJob: (jobId: string) => void
+  onToggleAll: () => void
 }
 
-export function JobTableView({ jobs, onDeleteRequest }: JobTableViewProps) {
+export function JobTableView({ jobs, onDeleteRequest, selectedIds, isAllSelected, isIndeterminate, onToggleJob, onToggleAll }: JobTableViewProps) {
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
+  const selectAllRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = isIndeterminate
+    }
+  }, [isIndeterminate])
 
   return (
     <div className="bg-white border border-domino-border">
       <table className="w-full">
         <thead>
           <tr className="border-b border-domino-border">
+            <th className="px-4 py-3 w-10">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={onToggleAll}
+                className="h-4 w-4 rounded border-domino-border text-domino-accent-purple focus:ring-domino-accent-purple cursor-pointer"
+                aria-label="Select all jobs"
+              />
+            </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-domino-text-secondary uppercase tracking-wide">
               <span className="inline-flex items-center gap-1 cursor-pointer hover:text-domino-text-primary">
                 Name
@@ -86,7 +108,16 @@ export function JobTableView({ jobs, onDeleteRequest }: JobTableViewProps) {
         </thead>
         <tbody>
           {jobs.map((job) => (
-            <tr key={job.id} className="border-b border-domino-border hover:bg-domino-bg-tertiary transition-colors">
+            <tr key={job.id} className={`border-b border-domino-border hover:bg-domino-bg-tertiary transition-colors ${selectedIds.has(job.id) ? 'bg-domino-accent-purple/5' : ''}`}>
+              <td className="px-4 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(job.id)}
+                  onChange={() => onToggleJob(job.id)}
+                  className="h-4 w-4 rounded border-domino-border text-domino-accent-purple focus:ring-domino-accent-purple cursor-pointer"
+                  aria-label={`Select ${job.name}`}
+                />
+              </td>
               <td className="px-4 py-3">
                 <Link
                   to={`/jobs/${job.id}`}

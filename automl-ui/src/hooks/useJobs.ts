@@ -7,6 +7,7 @@ import {
   createJob,
   cancelJob,
   deleteJob,
+  bulkDeleteJobs,
   getOrphanPreview,
   cleanupOrphans,
 } from '../api/jobs'
@@ -85,6 +86,17 @@ export function useDeleteJob() {
 
   return useMutation({
     mutationFn: (jobId: string) => deleteJob(jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
+}
+
+export function useBulkDeleteJobs() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (jobIds: string[]) => bulkDeleteJobs(jobIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
     },

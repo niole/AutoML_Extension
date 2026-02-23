@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { useJobs, useDeleteJob } from '../hooks/useJobs'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useJobs, useDeleteJob, useBulkDeleteJobs } from '../hooks/useJobs'
 import Spinner from '../components/common/Spinner'
 import { ConfirmDialog } from '../components/common/ConfirmDialog'
 import { Job } from '../types/job'
@@ -7,6 +7,7 @@ import { DashboardFilters } from '../components/dashboard/DashboardFilters'
 import { EmptyState } from '../components/dashboard/EmptyState'
 import { JobTableView } from '../components/dashboard/JobTableView'
 import { JobCardView } from '../components/dashboard/JobCardView'
+import { BulkActionBar } from '../components/dashboard/BulkActionBar'
 import { StorageCleanupDialog } from '../components/dashboard/StorageCleanupDialog'
 
 type ViewMode = 'table' | 'card'
@@ -17,10 +18,13 @@ function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [deleteConfirmJob, setDeleteConfirmJob] = useState<Job | null>(null)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [storageCleanupOpen, setStorageCleanupOpen] = useState(false)
 
   const { data, isLoading, error } = useJobs({ limit: 100 })
   const deleteJobMutation = useDeleteJob()
+  const bulkDeleteMutation = useBulkDeleteJobs()
   const allJobs = data?.jobs || []
 
   const handleDeleteJob = async (job: Job) => {
@@ -40,6 +44,57 @@ function Dashboard() {
       return true
     })
   }, [allJobs, search, statusFilter, typeFilter])
+
+  // Clear selection when filters or view mode change
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [search, statusFilter, typeFilter, viewMode])
+
+  // Prune selection to only include visible job IDs
+  useEffect(() => {
+    const visibleIds = new Set(filteredJobs.map((j) => j.id))
+    setSelectedIds((prev) => {
+      const pruned = new Set([...prev].filter((id) => visibleIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [filteredJobs])
+
+  const toggleJob = useCallback((jobId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(jobId)) next.delete(jobId)
+      else next.add(jobId)
+      return next
+    })
+  }, [])
+
+  const toggleAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allVisible = filteredJobs.map((j) => j.id)
+      if (prev.size === allVisible.length) return new Set()
+      return new Set(allVisible)
+    })
+  }, [filteredJobs])
+
+  const isAllSelected = filteredJobs.length > 0 && selectedIds.size === filteredJobs.length
+  const isIndeterminate = selectedIds.size > 0 && selectedIds.size < filteredJobs.length
+
+  const activeSelectedCount = filteredJobs.filter(
+    (j) => selectedIds.has(j.id) && ['pending', 'running'].includes(j.status)
+  ).length
+
+  const handleBulkDelete = async () => {
+    try {
+      const result = await bulkDeleteMutation.mutateAsync([...selectedIds])
+      setBulkDeleteConfirmOpen(false)
+      setSelectedIds(new Set())
+      if (result.failed.length > 0) {
+        console.error('Some jobs failed to delete:', result.failed)
+      }
+    } catch (err) {
+      console.error('Bulk delete failed:', err)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -71,16 +126,37 @@ function Dashboard() {
         onStorageCleanupClick={() => setStorageCleanupOpen(true)}
       />
 
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onClearSelection={() => setSelectedIds(new Set())}
+        onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
+        isDeleting={bulkDeleteMutation.isPending}
+      />
+
       {/* Content */}
       {filteredJobs.length === 0 ? (
         <EmptyState hasJobs={allJobs.length > 0} />
       ) : viewMode === 'table' ? (
-        <JobTableView jobs={filteredJobs} onDeleteRequest={setDeleteConfirmJob} />
+        <JobTableView
+          jobs={filteredJobs}
+          onDeleteRequest={setDeleteConfirmJob}
+          selectedIds={selectedIds}
+          isAllSelected={isAllSelected}
+          isIndeterminate={isIndeterminate}
+          onToggleJob={toggleJob}
+          onToggleAll={toggleAll}
+        />
       ) : (
-        <JobCardView jobs={filteredJobs} onDeleteRequest={setDeleteConfirmJob} />
+        <JobCardView
+          jobs={filteredJobs}
+          onDeleteRequest={setDeleteConfirmJob}
+          selectedIds={selectedIds}
+          onToggleJob={toggleJob}
+        />
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Single Delete Confirmation Modal */}
       {deleteConfirmJob && (
         <ConfirmDialog
           isOpen={true}
@@ -91,6 +167,20 @@ function Dashboard() {
           confirmLabel={deleteJobMutation.isPending ? 'Deleting...' : 'Delete'}
           variant="danger"
           isLoading={deleteJobMutation.isPending}
+        />
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {bulkDeleteConfirmOpen && (
+        <ConfirmDialog
+          isOpen={true}
+          onClose={() => setBulkDeleteConfirmOpen(false)}
+          onConfirm={handleBulkDelete}
+          title="Delete Jobs"
+          message={`Are you sure you want to delete ${selectedIds.size} ${selectedIds.size === 1 ? 'job' : 'jobs'}?${activeSelectedCount > 0 ? ` ${activeSelectedCount} active ${activeSelectedCount === 1 ? 'job' : 'jobs'} will be cancelled first.` : ''} This action cannot be undone.`}
+          confirmLabel={bulkDeleteMutation.isPending ? 'Deleting...' : `Delete ${selectedIds.size} ${selectedIds.size === 1 ? 'job' : 'jobs'}`}
+          variant="danger"
+          isLoading={bulkDeleteMutation.isPending}
         />
       )}
 

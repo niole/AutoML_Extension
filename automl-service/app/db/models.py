@@ -8,6 +8,7 @@ from sqlalchemy import String, Text, DateTime, Integer, Float, JSON, Enum as SQL
 from sqlalchemy.orm import Mapped, mapped_column
 import enum
 
+from app.core.utils import utc_now
 from app.db.database import Base
 
 
@@ -94,7 +95,7 @@ class Job(Base):
     registered_model_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -107,7 +108,7 @@ class JobLog(Base):
     job_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     level: Mapped[str] = mapped_column(String(20), default="INFO")
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class RegisteredModel(Base):
@@ -122,4 +123,4 @@ class RegisteredModel(Base):
     mlflow_model_uri: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     domino_model_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     deployed: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

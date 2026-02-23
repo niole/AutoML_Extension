@@ -2,13 +2,13 @@
 
 import asyncio
 import logging
-from datetime import datetime
 from functools import lru_cache
 from typing import Dict
 
 from app.config import get_settings
 from app.db.database import async_session_maker
 from app.db import crud
+from app.core.utils import utc_now
 from app.db.models import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -198,7 +198,7 @@ class JobQueueManager:
                         ):
                             await crud.update_job_status(
                                 db, job_id, JobStatus.CANCELLED,
-                                completed_at=datetime.utcnow(),
+                                completed_at=utc_now(),
                             )
                     return
 
@@ -220,7 +220,7 @@ class JobQueueManager:
                 ):
                     await crud.update_job_status(
                         db, job_id, JobStatus.CANCELLED,
-                        completed_at=datetime.utcnow(),
+                        completed_at=utc_now(),
                     )
             raise  # Re-raise so the Task is properly marked cancelled
 

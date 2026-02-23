@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.api.schemas.job import (
+    BulkDeleteJobsRequest,
+    BulkDeleteJobsResponse,
     JobCreateRequest,
     JobResponse,
     JobStatusResponse,
@@ -22,6 +24,7 @@ from app.api.schemas.job import (
 )
 from app.services.job_service import (
     bulk_cleanup as bulk_cleanup_service,
+    bulk_delete_jobs as bulk_delete_jobs_service,
     cancel_job as cancel_job_service,
     create_job_with_context,
     delete_job as delete_job_service,
@@ -111,6 +114,16 @@ async def bulk_cleanup(
 async def delete_orphans(db: AsyncSession = Depends(get_db)):
     """Delete orphaned model dirs and upload files with no matching job."""
     return await delete_orphans_service(db)
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteJobsResponse)
+async def bulk_delete_jobs(
+    request: BulkDeleteJobsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete multiple jobs at once. Active jobs are cancelled first."""
+    result = await bulk_delete_jobs_service(db, request.job_ids)
+    return BulkDeleteJobsResponse(**result)
 
 
 @router.get("/{job_id}", response_model=JobResponse)

@@ -20,9 +20,11 @@ function getExecutionTarget(job: Job): string {
 interface JobCardViewProps {
   jobs: Job[]
   onDeleteRequest: (job: Job) => void
+  selectedIds: Set<string>
+  onToggleJob: (jobId: string) => void
 }
 
-export function JobCardView({ jobs, onDeleteRequest }: JobCardViewProps) {
+export function JobCardView({ jobs, onDeleteRequest, selectedIds, onToggleJob }: JobCardViewProps) {
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
 
   return (
@@ -30,8 +32,17 @@ export function JobCardView({ jobs, onDeleteRequest }: JobCardViewProps) {
       {jobs.map((job) => (
         <div
           key={job.id}
-          className="bg-white shadow-sm hover:shadow-md transition-shadow"
+          className={`bg-white shadow-sm hover:shadow-md transition-shadow relative ${selectedIds.has(job.id) ? 'ring-2 ring-domino-accent-purple' : ''}`}
         >
+          <div className="absolute top-3 left-3 z-10">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(job.id)}
+              onChange={() => onToggleJob(job.id)}
+              className="h-4 w-4 rounded border-domino-border text-domino-accent-purple focus:ring-domino-accent-purple cursor-pointer"
+              aria-label={`Select ${job.name}`}
+            />
+          </div>
           <div className="flex">
             {/* Thumbnail area */}
             <div className="w-[140px] min-h-[140px] bg-gradient-to-br from-domino-accent-purple/20 to-domino-accent-purple/5 flex items-center justify-center flex-shrink-0 self-stretch">

@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from app.config import get_settings
@@ -18,6 +17,7 @@ from app.core.dataset_manager import DominoDatasetManager
 from app.core.domino_registry import get_domino_registry
 from app.core.model_diagnostics import get_model_diagnostics
 from app.core.model_loader import load_predictor, load_dataframe
+from app.core.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class TrainingProgressReporter:
         self.metrics_history.append({
             "model": model_name,
             "metrics": metrics,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": utc_now().isoformat()
         })
 
         # Note: Individual model metrics are logged by log_training_results
@@ -142,7 +142,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
 
             # Update status to running
             await crud.update_job_status(
-                db, job_id, JobStatus.RUNNING, started_at=datetime.utcnow()
+                db, job_id, JobStatus.RUNNING, started_at=utc_now()
             )
             await crud.add_job_log(db, job_id, "Training job started", "INFO")
 
@@ -393,7 +393,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
 
             # Update job status to COMPLETED
             await crud.update_job_status(
-                db, job_id, JobStatus.COMPLETED, completed_at=datetime.utcnow()
+                db, job_id, JobStatus.COMPLETED, completed_at=utc_now()
             )
 
             # Auto-register to Domino Model Registry if configured
@@ -437,7 +437,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             logger.info(f"Training job cancelled: {job_id}")
             await crud.update_job_status(
                 db, job_id, JobStatus.CANCELLED,
-                completed_at=datetime.utcnow(),
+                completed_at=utc_now(),
             )
             await crud.add_job_log(db, job_id, "Training cancelled", "WARNING")
             if tracker:
@@ -456,7 +456,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 job_id,
                 JobStatus.FAILED,
                 error_message=str(e),
-                completed_at=datetime.utcnow(),
+                completed_at=utc_now(),
             )
             await crud.add_job_log(db, job_id, f"Training failed: {str(e)}", "ERROR")
 

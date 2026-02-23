@@ -136,6 +136,7 @@ def register_pattern_routes(app: FastAPI) -> None:
         ("/svcjobstatus", "app.services.job_service", "get_job_status_response", [("job_id",)]),
         ("/svcjobmetrics", "app.services.job_service", "get_job_metrics_response", [("job_id",)]),
         ("/svcjobprogress", "app.services.job_service", "get_job_progress_response", [("job_id",)]),
+        ("/svcjobbulkdelete", "app.services.job_service", "bulk_delete_jobs", [("job_ids",)]),
     ]
 
     for path, mod, fn, keys in post_keys_db_first:

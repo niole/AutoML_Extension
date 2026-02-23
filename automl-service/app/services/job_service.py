@@ -3,8 +3,9 @@
 import asyncio
 import os
 import logging
-from datetime import datetime
 from typing import Optional
+
+from app.core.utils import utc_now
 
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -257,7 +258,7 @@ async def create_job_with_context(
                 job_id=job.id,
                 status=JobStatus.FAILED,
                 error_message=error_message,
-                completed_at=datetime.utcnow(),
+                completed_at=utc_now(),
             )
             raise HTTPException(status_code=502, detail=error_message)
 
@@ -578,7 +579,7 @@ async def _mark_pending_job_failed_for_missing_data(
         job_id=job.id,
         status=JobStatus.FAILED,
         error_message=error_message,
-        completed_at=datetime.utcnow(),
+        completed_at=utc_now(),
     )
     try:
         await crud.add_job_log(db, job.id, error_message, "ERROR")
@@ -650,7 +651,7 @@ async def _sync_domino_job_state(
                 job_id=job.id,
                 status=JobStatus.CANCELLED,
                 error_message=error_message,
-                completed_at=datetime.utcnow(),
+                completed_at=utc_now(),
             )
             try:
                 await crud.add_job_log(
@@ -685,7 +686,7 @@ async def _sync_domino_job_state(
             db=db,
             job_id=job.id,
             status=JobStatus.RUNNING,
-            started_at=job.started_at or datetime.utcnow(),
+            started_at=job.started_at or utc_now(),
         )
         return updated or job
 
@@ -709,7 +710,7 @@ async def _sync_domino_job_state(
             db=db,
             job_id=job.id,
             status=JobStatus.COMPLETED,
-            completed_at=job.completed_at or datetime.utcnow(),
+            completed_at=job.completed_at or utc_now(),
         )
         return updated or job
 
@@ -723,7 +724,7 @@ async def _sync_domino_job_state(
             job_id=job.id,
             status=JobStatus.FAILED,
             error_message=error_message,
-            completed_at=datetime.utcnow(),
+            completed_at=utc_now(),
         )
         try:
             await crud.add_job_log(
@@ -740,7 +741,7 @@ async def _sync_domino_job_state(
         db=db,
         job_id=job.id,
         status=JobStatus.CANCELLED,
-        completed_at=datetime.utcnow(),
+        completed_at=utc_now(),
     )
     try:
         await crud.add_job_log(
@@ -905,7 +906,7 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
             db,
             job_id,
             JobStatus.CANCELLED,
-            completed_at=datetime.utcnow(),
+            completed_at=utc_now(),
             error_message=stop_error if stop_error and not stop_success else None,
         )
         return {
@@ -922,7 +923,7 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
         db,
         job_id,
         JobStatus.CANCELLED,
-        completed_at=datetime.utcnow(),
+        completed_at=utc_now(),
     )
     return {"message": "Job cancelled", "job_id": job_id, "task_cancelled": task_cancelled}
 
@@ -935,6 +936,38 @@ async def delete_job(db: AsyncSession, job_id: str) -> dict:
     cleanup_result = await get_cleanup_service().delete_job_artifacts(job, db)
     await crud.delete_job(db, job_id)
     return {"message": "Job deleted", "job_id": job_id, "cleanup": cleanup_result}
+
+
+async def bulk_delete_jobs(db: AsyncSession, job_ids: list[str]) -> dict:
+    """Delete multiple jobs, cancelling active ones first. Continues on per-job failure."""
+    from app.core.cleanup_service import get_cleanup_service
+
+    deleted_job_ids: list[str] = []
+    failed: list[dict[str, str]] = []
+
+    for job_id in job_ids:
+        try:
+            job = await crud.get_job(db, job_id)
+            if not job:
+                failed.append({"job_id": job_id, "error": "Job not found"})
+                continue
+
+            # Cancel active jobs first
+            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+                try:
+                    await cancel_job(db, job_id)
+                except Exception:
+                    logger.warning("Failed to cancel active job %s before deletion, proceeding anyway", job_id)
+
+            cleanup_result = await get_cleanup_service().delete_job_artifacts(job, db)
+            await crud.delete_job(db, job_id)
+            deleted_job_ids.append(job_id)
+            logger.info("Bulk delete: deleted job %s (cleanup=%s)", job_id, cleanup_result)
+        except Exception as exc:
+            logger.exception("Bulk delete: failed to delete job %s", job_id)
+            failed.append({"job_id": job_id, "error": str(exc)})
+
+    return {"deleted_job_ids": deleted_job_ids, "failed": failed}
 
 
 async def register_model_for_job(
