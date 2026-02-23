@@ -1,7 +1,7 @@
 import type { Job } from '../../types/job'
 
 interface DominoIntegrationsTabProps {
-  job: Job | undefined
+  job: Job
 }
 
 export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
