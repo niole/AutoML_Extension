@@ -421,6 +421,7 @@ class JobResponse(BaseModel):
     is_registered: bool = False
     registered_model_name: Optional[str] = None
     registered_model_version: Optional[str] = None
+    model_registry_url: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

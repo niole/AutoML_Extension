@@ -156,10 +156,31 @@ def _build_experiment_run_url(job: Job, experiment_id: Optional[str]) -> Optiona
     return f"{host}{path}" if host else path
 
 
+def _build_model_registry_url(job: Job) -> Optional[str]:
+    """Build deep link to Domino Model Registry model card."""
+    if not job.registered_model_name:
+        return None
+
+    owner = _resolve_project_owner()
+    project_name = _resolve_project_name(job)
+    if not owner or not project_name:
+        return None
+
+    encoded_owner = quote(owner, safe="")
+    encoded_project = quote(project_name, safe="")
+    encoded_model = quote(job.registered_model_name, safe="")
+    path = f"/u/{encoded_owner}/{encoded_project}/model-registry/{encoded_model}/model-card"
+    if job.registered_model_version:
+        path += f"?version={quote(job.registered_model_version, safe='')}"
+    host = _resolve_domino_ui_host()
+    return f"{host}{path}" if host else path
+
+
 def attach_external_links(job: Job, logger) -> Job:
     """Attach computed external URLs used by the Job Overview UI."""
     experiment_id = _resolve_experiment_id(job, logger)
     setattr(job, "domino_job_url", _build_domino_job_url(job))
     setattr(job, "experiment_id", experiment_id)
     setattr(job, "experiment_run_url", _build_experiment_run_url(job, experiment_id))
+    setattr(job, "model_registry_url", _build_model_registry_url(job))
     return job
