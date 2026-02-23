@@ -1,12 +1,47 @@
+import { useEffect } from 'react'
 import type { Job } from '../../types/job'
+import type { ModelApi, Deployment } from '../../types/deployment'
+import { useDeployments } from '../../hooks/useDeployments'
 
 interface DominoIntegrationsTabProps {
   job: Job
 }
 
+const STATUS_STYLES: Record<string, string> = {
+  running: 'bg-domino-accent-green/10 text-domino-accent-green',
+  starting: 'bg-domino-accent-purple/10 text-domino-accent-purple',
+  building: 'bg-domino-accent-purple/10 text-domino-accent-purple',
+  pending: 'bg-domino-accent-yellow/15 text-[#998A12]',
+  stopped: 'bg-domino-text-muted/15 text-domino-text-muted',
+  stopping: 'bg-domino-text-muted/15 text-domino-text-muted',
+  failed: 'bg-domino-accent-red/10 text-domino-accent-red',
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const style = STATUS_STYLES[status] || 'bg-domino-text-muted/15 text-domino-text-muted'
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${style}`}>
+      {status}
+    </span>
+  )
+}
+
 export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
-  const experimentUrl = toDominoTenantUrl(job?.experiment_run_url)
-  const dominoJobUrl = toDominoTenantUrl(job?.domino_job_url)
+  const { modelApis, deployments, loading, fetchModelApis, fetchDeployments } = useDeployments()
+  const experimentUrl = toDominoTenantUrl(job.experiment_run_url)
+
+  useEffect(() => {
+    fetchModelApis()
+    fetchDeployments()
+  }, [fetchModelApis, fetchDeployments])
+
+  // Build a map of modelApiId → deployments for that API
+  const deploymentsByApi = new Map<string, Deployment[]>()
+  for (const d of deployments) {
+    const list = deploymentsByApi.get(d.modelApiId) || []
+    list.push(d)
+    deploymentsByApi.set(d.modelApiId, list)
+  }
 
   return (
     <div className="space-y-6">
@@ -15,7 +50,7 @@ export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
         title="Model Registry"
         description="Registered model versions tracked in Domino."
       >
-        {job?.is_registered && job.registered_model_name ? (
+        {job.is_registered && job.registered_model_name ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-domino-accent-green/10 text-domino-accent-green">
@@ -49,32 +84,28 @@ export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
         )}
       </SectionCard>
 
-      {/* Model API */}
+      {/* Model APIs & Deployments */}
       <SectionCard
-        title="Model API"
-        description="Domino Model API endpoint deployed from this model."
+        title="Model APIs"
+        description="Domino Model API endpoints available in this project."
       >
-        {dominoJobUrl && job?.domino_job_id ? (
-          <div className="space-y-3">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-              <dt className="text-domino-text-secondary">Domino job</dt>
-              <dd>
-                <a href={dominoJobUrl} target="_blank" rel="noreferrer" className="text-sm text-[#3B3BD3] hover:underline break-all">
-                  {job.domino_job_id}
-                  <ExternalLinkIcon className="inline ml-1 -mt-0.5" />
-                </a>
-              </dd>
-              {job.domino_job_status && (
-                <>
-                  <dt className="text-domino-text-secondary">Status</dt>
-                  <dd className="text-domino-text-primary">{job.domino_job_status}</dd>
-                </>
-              )}
-            </dl>
+        {loading ? (
+          <div className="text-center py-4">
+            <p className="text-sm text-domino-text-muted">Loading model APIs...</p>
+          </div>
+        ) : modelApis.length > 0 ? (
+          <div className="space-y-4">
+            {modelApis.map((api) => (
+              <ModelApiRow
+                key={api.id}
+                api={api}
+                deployments={deploymentsByApi.get(api.id) || []}
+              />
+            ))}
           </div>
         ) : (
           <EmptyState
-            message="No Model API deployed yet."
+            message="No Model APIs in this project yet."
             action="Publish via the Deploy menu in the header."
           />
         )}
@@ -92,14 +123,10 @@ export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
                 <>
                   <dt className="text-domino-text-secondary">Experiment</dt>
                   <dd>
-                    {experimentUrl ? (
-                      <a href={experimentUrl} target="_blank" rel="noreferrer" className="text-sm text-[#3B3BD3] hover:underline">
-                        {job.experiment_name}
-                        <ExternalLinkIcon className="inline ml-1 -mt-0.5" />
-                      </a>
-                    ) : (
-                      <span className="text-domino-text-primary">{job.experiment_name}</span>
-                    )}
+                    <a href={experimentUrl} target="_blank" rel="noreferrer" className="text-sm text-[#3B3BD3] hover:underline">
+                      {job.experiment_name}
+                      <ExternalLinkIcon className="inline ml-1 -mt-0.5" />
+                    </a>
                   </dd>
                 </>
               )}
@@ -107,16 +134,10 @@ export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
                 <>
                   <dt className="text-domino-text-secondary">Run ID</dt>
                   <dd>
-                    {experimentUrl ? (
-                      <a href={experimentUrl} target="_blank" rel="noreferrer" className="text-sm font-mono text-[#3B3BD3] hover:underline break-all">
-                        {job.experiment_run_id || job.experiment_id}
-                        <ExternalLinkIcon className="inline ml-1 -mt-0.5" />
-                      </a>
-                    ) : (
-                      <span className="text-domino-text-primary font-mono text-xs break-all">
-                        {job.experiment_run_id || job.experiment_id}
-                      </span>
-                    )}
+                    <a href={experimentUrl} target="_blank" rel="noreferrer" className="text-sm font-mono text-[#3B3BD3] hover:underline break-all">
+                      {job.experiment_run_id || job.experiment_id}
+                      <ExternalLinkIcon className="inline ml-1 -mt-0.5" />
+                    </a>
                   </dd>
                 </>
               )}
@@ -126,6 +147,48 @@ export function DominoIntegrationsTab({ job }: DominoIntegrationsTabProps) {
           <EmptyState message="No experiment tracking data for this job." />
         )}
       </SectionCard>
+    </div>
+  )
+}
+
+function ModelApiRow({ api, deployments }: { api: ModelApi; deployments: Deployment[] }) {
+  return (
+    <div className="border border-domino-border rounded p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-domino-text-primary">{api.name}</span>
+        {api.createdAt && (
+          <span className="text-xs text-domino-text-muted">
+            {new Date(api.createdAt).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+      {api.description && (
+        <p className="text-xs text-domino-text-secondary">{api.description}</p>
+      )}
+      {deployments.length > 0 ? (
+        <div className="space-y-1.5 pt-1">
+          {deployments.map((d) => (
+            <div key={d.id} className="flex items-center gap-3 text-xs">
+              <StatusBadge status={d.status} />
+              {d.url ? (
+                <a
+                  href={toDominoTenantUrl(d.url) || d.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#3B3BD3] hover:underline truncate"
+                >
+                  {d.url}
+                  <ExternalLinkIcon className="inline ml-1 -mt-0.5" />
+                </a>
+              ) : (
+                <span className="text-domino-text-muted">No endpoint URL</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-domino-text-muted pt-1">No active deployments</p>
+      )}
     </div>
   )
 }
