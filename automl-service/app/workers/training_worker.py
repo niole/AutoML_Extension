@@ -552,6 +552,11 @@ async def register_trained_model(
                 tracker.log_text(model_card, "model_card.md")
         except Exception as e:
             logger.warning(f"Could not generate model card: {e}")
+        finally:
+            # Ensure no MLflow run is left active — log_text / log_artifact
+            # may auto-start a run that isn't closed by a context manager.
+            import mlflow as _mlflow
+            _mlflow.end_run()
 
         return {
             "model_name": model_name,

@@ -140,7 +140,9 @@ class TestModelRegistration:
         )
         assert resp.status_code == 200, f"Direct register failed: {resp.text}"
         body = resp.json()
-        assert body.get("success") is True
+        assert body.get("success") is True, (
+            f"Direct registration failed: {body.get('error')}"
+        )
 
         actual_name = body.get("model_name", model_name)
         cleanup_registry["registered_models"].append(actual_name)
