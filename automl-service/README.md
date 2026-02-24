@@ -254,7 +254,7 @@ Tests marked `@pytest.mark.domino` are automatically skipped when the `domino` p
 
 ### Test report
 
-The HTML report (`/mnt/results/test_report.html` in Domino) is customized for fast triage:
+The HTML report (`/mnt/artifacts/results/test_report_xxx.html` in Domino) is customized for fast triage:
 
 - **Module summary table** at the top — one row per test file showing pass/fail/skip/error counts and duration, color-coded (green = all pass, red = failures, orange = all skipped)
 - **Passing tests hidden by default** — the results table only shows failures, errors, and skips. Click the "Passed" checkbox to expand if needed.
