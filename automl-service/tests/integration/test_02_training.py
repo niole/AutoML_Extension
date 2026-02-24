@@ -1,9 +1,8 @@
 """Integration tests for training job lifecycle."""
 
-import os
-
 import pytest
 
+from .conftest import has_domino_auth
 from .helpers import poll_job_until_terminal
 
 pytestmark = pytest.mark.integration
@@ -156,8 +155,8 @@ class TestDominoJobTraining:
 
     @pytest.fixture(autouse=True)
     def _require_domino(self):
-        if not os.environ.get("DOMINO_API_KEY"):
-            pytest.skip("Not in Domino environment (DOMINO_API_KEY not set)")
+        if not has_domino_auth():
+            pytest.skip("No Domino credentials found (checked DOMINO_API_KEY, DOMINO_USER_API_KEY, DOMINO_TOKEN_FILE, DOMINO_API_PROXY)")
 
     def test_create_domino_job(
         self, client, tabular_csv_path, shared_state, cleanup_registry, unique_name

@@ -26,6 +26,29 @@ RUN_TAG = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 # ---------------------------------------------------------------------------
 SERVICE_PORT = os.environ.get("INTTEST_SERVICE_PORT", "9876")
 
+
+def has_domino_auth() -> bool:
+    """Check whether Domino API credentials are available.
+
+    Mirrors the auth resolution chain in app/config.py Settings.effective_api_key:
+    DOMINO_API_KEY > DOMINO_USER_API_KEY > DOMINO_TOKEN_FILE > DOMINO_API_PROXY
+    """
+    if os.environ.get("DOMINO_API_KEY"):
+        return True
+    if os.environ.get("DOMINO_USER_API_KEY"):
+        return True
+    token_file = os.environ.get("DOMINO_TOKEN_FILE")
+    if token_file:
+        try:
+            with open(token_file, "r") as f:
+                if f.read().strip():
+                    return True
+        except OSError:
+            pass
+    if os.environ.get("DOMINO_API_PROXY"):
+        return True
+    return False
+
 # ---------------------------------------------------------------------------
 # Markers
 # ---------------------------------------------------------------------------

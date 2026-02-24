@@ -1,8 +1,8 @@
 """Integration tests for deployment endpoints."""
 
-import os
-
 import pytest
+
+from .conftest import has_domino_auth
 
 pytestmark = pytest.mark.integration
 
@@ -15,8 +15,8 @@ class TestDeployments:
 
     @pytest.fixture(autouse=True)
     def _require_domino(self):
-        if not os.environ.get("DOMINO_API_KEY"):
-            pytest.skip("Deployment tests require Domino environment")
+        if not has_domino_auth():
+            pytest.skip("Deployment tests require Domino credentials (checked DOMINO_API_KEY, DOMINO_USER_API_KEY, DOMINO_TOKEN_FILE, DOMINO_API_PROXY)")
 
     def test_list_model_apis(self, client):
         resp = client.get("/svc/v1/deployments/model-apis")
