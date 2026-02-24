@@ -22,6 +22,11 @@ from .helpers import wait_for_service_ready
 RUN_TAG = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
 # ---------------------------------------------------------------------------
+# Service port — configurable via INTTEST_SERVICE_PORT env var
+# ---------------------------------------------------------------------------
+SERVICE_PORT = os.environ.get("INTTEST_SERVICE_PORT", "9876")
+
+# ---------------------------------------------------------------------------
 # Markers
 # ---------------------------------------------------------------------------
 pytestmark = pytest.mark.integration
@@ -45,7 +50,7 @@ def service_process() -> Generator[subprocess.Popen, None, None]:
             sys.executable, "-m", "uvicorn",
             "app.main:app",
             "--host", "0.0.0.0",
-            "--port", "8000",
+            "--port", SERVICE_PORT,
             "--workers", "1",
         ],
         cwd=str(service_dir),
@@ -81,7 +86,7 @@ def client(service_process) -> Generator[httpx.Client, None, None]:
     """Synchronous httpx client pointed at the running service."""
     username = os.environ.get("DOMINO_STARTING_USERNAME", "integration-test")
     c = httpx.Client(
-        base_url="http://localhost:8000",
+        base_url=f"http://localhost:{SERVICE_PORT}",
         headers={"domino-username": username},
         timeout=httpx.Timeout(60.0, connect=10.0),
     )

@@ -43,7 +43,7 @@ class TestModelRegistration:
             pytest.skip("No model registered")
 
         resp = client.get("/svc/v1/registry/models")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"List models failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert isinstance(body, list)
         names = [m["name"] for m in body]
@@ -56,7 +56,7 @@ class TestModelRegistration:
             pytest.skip("No model registered")
 
         resp = client.get("/svc/v1/registry/models/mlflow")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"List MLflow models failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert isinstance(body, list)
         # If MLflow is configured, our model should appear

@@ -13,7 +13,7 @@ class TestTabularProfiling:
             "/svc/v1/profiling/profile",
             json={"file_path": tabular_csv_path},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Profile tabular failed ({resp.status_code}): {resp.text}"
         body = resp.json()
 
         # Summary
@@ -40,7 +40,7 @@ class TestTabularProfiling:
                 "sampling_strategy": "random",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Profile with sampling failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         # With 500-row file and sample_size=100, sampling should engage
         summary = body["summary"]
@@ -51,7 +51,7 @@ class TestTabularProfiling:
             "/svc/v1/profiling/profile/suggest-target",
             json={"file_path": tabular_csv_path},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Suggest target failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert "suggestions" in body
         assert len(body["suggestions"]) > 0
@@ -80,7 +80,7 @@ class TestTimeSeriesProfiling:
                 "id_column": "item_id",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Profile TS failed ({resp.status_code}): {resp.text}"
         body = resp.json()
 
         # Should have temporal summary
@@ -109,7 +109,7 @@ class TestPresetsAndMetrics:
 
     def test_get_presets(self, client):
         resp = client.get("/svc/v1/profiling/profile/presets")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Get presets failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert "tabular" in body
         assert "timeseries" in body
@@ -118,7 +118,7 @@ class TestPresetsAndMetrics:
 
     def test_get_metrics(self, client):
         resp = client.get("/svc/v1/profiling/profile/metrics")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Get metrics failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         for problem_type in ("binary", "multiclass", "regression", "timeseries"):
             assert problem_type in body

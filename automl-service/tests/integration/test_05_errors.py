@@ -41,7 +41,7 @@ class TestJobErrors:
                 # target_column missing
             },
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
 
     def test_create_ts_job_without_time_column(self, client, tabular_csv_path, unique_name):
         """Time series job without time_column should fail."""
@@ -61,18 +61,18 @@ class TestJobErrors:
         )
         # Should fail with 400 or 422
         assert resp.status_code in (200, 400, 422), (
-            f"Expected 400/422 for missing time_column, got {resp.status_code}"
+            f"Expected 400/422 for missing time_column, got {resp.status_code}: {resp.text}"
         )
 
     def test_get_nonexistent_job(self, client):
         fake_id = str(uuid.uuid4())
         resp = client.get(f"/svc/v1/jobs/{fake_id}")
-        assert resp.status_code == 404
+        assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
 
     def test_cancel_nonexistent_job(self, client):
         fake_id = str(uuid.uuid4())
         resp = client.post(f"/svc/v1/jobs/{fake_id}/cancel")
-        assert resp.status_code == 404
+        assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
 
     def test_cancel_completed_job(self, client, shared_state):
         """Cancelling a completed job should return an error."""
@@ -92,7 +92,7 @@ class TestJobErrors:
             "/svc/v1/jobs/bulk-delete",
             json={"job_ids": []},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
 
 
 class TestProfilingErrors:

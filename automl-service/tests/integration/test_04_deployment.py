@@ -20,14 +20,14 @@ class TestDeployments:
 
     def test_list_model_apis(self, client):
         resp = client.get("/svc/v1/deployments/model-apis")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"List model APIs failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         # Should be a list (possibly empty)
         assert isinstance(body, list)
 
     def test_list_deployments(self, client):
         resp = client.get("/svc/v1/deployments/deployments")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"List deployments failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert isinstance(body, list)
 
@@ -61,6 +61,6 @@ class TestDeployments:
             pytest.skip("No deployment created")
 
         resp = client.get(f"/svc/v1/deployments/deployments/{dep_id}")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Get deployment failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert body.get("success") is True or "status" in body

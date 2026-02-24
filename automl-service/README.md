@@ -319,8 +319,8 @@ Numeric prefixes enforce collection order — later tests depend on earlier ones
 
 #### Integration test design
 
-- **Service startup:** Session-scoped fixture starts `uvicorn app.main:app` as a subprocess, polls `GET /svc/v1/health` until ready (120s timeout). Teardown sends SIGTERM.
-- **HTTP client:** Synchronous `httpx.Client` pointing at `localhost:8000` with a `domino-username` header from `DOMINO_STARTING_USERNAME`.
+- **Service startup:** Session-scoped fixture starts `uvicorn app.main:app` as a subprocess on port 9876 (configurable via `INTTEST_SERVICE_PORT`), polls `GET /svc/v1/health` until ready (120s timeout). Teardown sends SIGTERM. Port 9876 is used by default to avoid conflicts with the main app on port 8000.
+- **HTTP client:** Synchronous `httpx.Client` pointing at `localhost:{INTTEST_SERVICE_PORT}` with a `domino-username` header from `DOMINO_STARTING_USERNAME`.
 - **Test data:** Session-scoped fixtures generate small synthetic CSVs (500-row tabular, 2-series x 180-day time series) written to `/mnt/data/{project}/datasets/integration_test/` (Domino) or `local_data/datasets/integration_test/` (local).
 - **Shared state:** Session-scoped mutable dict passes resource IDs between ordered test files (e.g., `tabular_job_id` from test_02 feeds test_03). Downstream tests skip if required keys are missing.
 - **Unique names:** All resources use `inttest_{YYYYMMDD_HHMMSS}_{label}` to avoid collisions between runs.

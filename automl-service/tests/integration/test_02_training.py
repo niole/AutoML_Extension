@@ -62,7 +62,7 @@ class TestLocalTabularTraining:
             pytest.skip("tabular job did not complete")
 
         resp = client.get(f"/svc/v1/jobs/{job_id}/metrics")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Get metrics failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert body.get("metrics"), "Metrics should not be empty for a completed job"
 
@@ -75,7 +75,7 @@ class TestLocalTabularTraining:
             pytest.skip("tabular job did not complete")
 
         resp = client.get(f"/svc/v1/jobs/{job_id}")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Get job failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert body.get("leaderboard"), "Leaderboard should not be empty"
         assert len(body["leaderboard"]) >= 1
@@ -87,7 +87,7 @@ class TestLocalTabularTraining:
             pytest.skip("tabular_job_id not set")
 
         resp = client.get("/svc/v1/jobs")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"List jobs failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         job_ids = [j["id"] for j in body["jobs"]]
         assert job_id in job_ids
@@ -146,7 +146,7 @@ class TestLocalTimeSeriesTraining:
             pytest.skip("TS job did not complete")
 
         resp = client.get(f"/svc/v1/jobs/{job_id}/metrics")
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Get TS metrics failed ({resp.status_code}): {resp.text}"
         body = resp.json()
         assert body.get("metrics"), "TS metrics should not be empty"
 
