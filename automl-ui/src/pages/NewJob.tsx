@@ -19,13 +19,18 @@ function NewJob() {
   const navigate = useNavigate()
   const wizard = useWizard()
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isQueueFull, setIsQueueFull] = useState(false)
 
   const handleSubmit = async () => {
     try {
       setSubmitError(null)
+      setIsQueueFull(false)
       const jobId = await wizard.submit()
       navigate(`/jobs/${jobId}`)
     } catch (error) {
+      if ((error as any)?.status === 429) {
+        setIsQueueFull(true)
+      }
       setSubmitError(error instanceof Error ? error.message : 'Failed to create job')
     }
   }
@@ -80,8 +85,20 @@ function NewJob() {
       </div>
 
       {submitError && (
-        <div className="p-4 bg-domino-accent-red/10 border border-domino-accent-red">
-          <p className="text-domino-accent-red">{submitError}</p>
+        <div className={`p-4 border ${isQueueFull ? 'bg-amber-50 border-amber-300' : 'bg-domino-accent-red/10 border-domino-accent-red'}`}>
+          <div className="flex items-start gap-3">
+            {isQueueFull && (
+              <svg className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            <div>
+              <p className={isQueueFull ? 'text-amber-800' : 'text-domino-accent-red'}>{submitError}</p>
+              {isQueueFull && (
+                <p className="text-amber-600 text-sm mt-1">Check the Jobs dashboard for active job status.</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

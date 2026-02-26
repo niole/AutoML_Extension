@@ -104,7 +104,9 @@ class ApiClient {
           message = errorData.detail || errorData.error || response.statusText || 'An error occurred'
         }
         console.error('API Error:', message)
-        throw new Error(message)
+        const error = new Error(message)
+        ;(error as any).status = response.status
+        throw error
       }
 
       if (response.status === 204) {

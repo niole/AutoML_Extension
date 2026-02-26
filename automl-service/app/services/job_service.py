@@ -191,6 +191,14 @@ def build_job_model(
     )
 
 
+async def _count_active_domino_jobs(db: AsyncSession) -> int:
+    """Count in-flight Domino jobs (pending + running)."""
+    jobs = await crud.get_jobs_by_statuses(
+        db, [JobStatus.PENDING, JobStatus.RUNNING], execution_target="domino_job"
+    )
+    return len(jobs)
+
+
 def resolve_execution_target(job_request: JobCreateRequest) -> str:
     """Resolve training execution target, supporting legacy and explicit flags."""
     if job_request.execution_target == "domino_job" or job_request.run_as_domino_job:
@@ -223,6 +231,34 @@ async def create_job_with_context(
         project_id=project_id,
         project_name=project_name,
     )
+
+    # Capacity gate: reject early when queue is full (before DB insert)
+    execution_target = resolve_execution_target(job_request)
+    settings = get_settings()
+
+    if execution_target == "domino_job":
+        active_domino = await _count_active_domino_jobs(db)
+        if active_domino >= settings.max_domino_queue_size:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"The Domino job queue is full ({active_domino}/{settings.max_domino_queue_size}). "
+                    f"Wait for running jobs to complete, then try again."
+                ),
+            )
+    else:
+        from app.core.job_queue import get_job_queue
+
+        active_local = get_job_queue().get_total_tracked()
+        if active_local >= settings.max_local_queue_size:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"The local job queue is full ({active_local}/{settings.max_local_queue_size}). "
+                    f"Wait for running jobs to complete, then try again."
+                ),
+            )
+
     job = build_job_model(
         job_request=job_request,
         job_name=normalized_job_name,
@@ -378,7 +414,11 @@ def get_queue_status() -> dict:
     """Return current queue status."""
     from app.core.job_queue import get_job_queue
 
-    return get_job_queue().get_queue_status()
+    settings = get_settings()
+    status = get_job_queue().get_queue_status()
+    status["max_local_queue_size"] = settings.max_local_queue_size
+    status["max_domino_queue_size"] = settings.max_domino_queue_size
+    return status
 
 
 def resolve_job_list_filters(

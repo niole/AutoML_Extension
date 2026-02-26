@@ -126,6 +126,8 @@ class Settings(BaseSettings):
     max_shap_samples: int = 100
     max_scatter_points: int = 500
     max_concurrent_jobs: int = 2
+    max_local_queue_size: int = 10
+    max_domino_queue_size: int = 20
 
     # CORS
     cors_origins: list[str] = ["*"]

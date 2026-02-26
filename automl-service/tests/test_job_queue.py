@@ -195,3 +195,40 @@ class TestIsJobCancelled:
 
     def test_unknown_job_returns_false(self, queue: JobQueueManager):
         assert queue.is_job_cancelled("ghost-job") is False
+
+
+# ---------------------------------------------------------------------------
+# get_total_tracked
+# ---------------------------------------------------------------------------
+
+class TestGetTotalTracked:
+    def test_initial_zero(self, queue: JobQueueManager):
+        assert queue.get_total_tracked() == 0
+
+    @pytest.mark.asyncio
+    async def test_reflects_enqueued_jobs(self, queue: JobQueueManager):
+        with (
+            patch("app.core.job_queue.async_session_maker") as mock_session_maker,
+            patch(
+                "app.core.job_queue.crud",
+                new_callable=MagicMock,
+            ) as mock_crud,
+            patch(
+                "app.workers.training_worker.run_training_job",
+                side_effect=_fake_training_job,
+            ),
+        ):
+            mock_db = AsyncMock()
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_session_maker.return_value = mock_ctx
+
+            mock_crud.update_job_progress = AsyncMock()
+
+            await queue.enqueue("job-a")
+            await queue.enqueue("job-b")
+
+            assert queue.get_total_tracked() >= 1  # at least one still active
+
+            await asyncio.sleep(0.3)

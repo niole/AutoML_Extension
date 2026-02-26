@@ -151,6 +151,10 @@ class JobQueueManager:
 
         logger.info("Job queue shutdown complete")
 
+    def get_total_tracked(self) -> int:
+        """Return count of all active tasks (running + queued)."""
+        return sum(1 for t in self._tasks.values() if not t.done())
+
     def get_queue_status(self) -> dict:
         """Return current queue status."""
         total_active = sum(1 for t in self._tasks.values() if not t.done())

@@ -17,6 +17,7 @@ from app.api.schemas.job import (
 )
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.services.job_service import (
+    _count_active_domino_jobs,
     _is_domino_missing_error,
     _is_domino_terminal_status,
     _normalize_job_name,
@@ -24,7 +25,9 @@ from app.services.job_service import (
     _terminal_status_from_domino,
     build_autogluon_config,
     build_job_model,
+    create_job_with_context,
     extract_metrics_leaderboard,
+    get_queue_status,
     get_request_owner,
     normalize_job_leaderboard,
     resolve_execution_target,
@@ -627,3 +630,118 @@ class TestParseStatusesCsv:
     def test_invalid_status_raises(self):
         with pytest.raises(ValueError):
             _parse_statuses_csv("invalid_status")
+
+
+# ===========================================================================
+# Queue capacity enforcement (429)
+# ===========================================================================
+
+
+class TestQueueCapacity:
+    """Tests for rate-limiting in create_job_with_context."""
+
+    def _mock_settings(self, **overrides):
+        """Build a settings mock with safe defaults for DB-interacting tests."""
+        defaults = dict(
+            max_local_queue_size=10,
+            max_domino_queue_size=20,
+            domino_project_id=None,
+            domino_project_name=None,
+        )
+        defaults.update(overrides)
+        return MagicMock(**defaults)
+
+    @pytest.mark.asyncio
+    async def test_local_queue_full_returns_429(self, db_session):
+        req = _make_create_request()
+        with (
+            patch("app.core.job_queue.get_job_queue") as mock_queue,
+            patch("app.services.job_service.get_settings") as mock_get_settings,
+        ):
+            mock_get_settings.return_value = self._mock_settings(max_local_queue_size=5)
+            mock_queue.return_value.get_total_tracked.return_value = 5
+
+            with pytest.raises(HTTPException) as exc_info:
+                await create_job_with_context(db_session, req)
+            assert exc_info.value.status_code == 429
+            assert "local" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_domino_queue_full_returns_429(self, db_session):
+        req = _make_create_request(execution_target="domino_job")
+        with (
+            patch(
+                "app.services.job_service._count_active_domino_jobs",
+                new_callable=AsyncMock,
+                return_value=20,
+            ),
+            patch("app.services.job_service.get_settings") as mock_get_settings,
+        ):
+            mock_get_settings.return_value = self._mock_settings(max_domino_queue_size=20)
+
+            with pytest.raises(HTTPException) as exc_info:
+                await create_job_with_context(db_session, req)
+            assert exc_info.value.status_code == 429
+            assert "domino" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_local_queue_under_limit_proceeds(self, db_session):
+        """When the local queue is under the limit, the job should be created."""
+        req = _make_create_request()
+        with (
+            patch("app.core.job_queue.get_job_queue") as mock_queue,
+            patch("app.services.job_service.get_settings") as mock_get_settings,
+            patch("app.services.job_service.crud") as mock_crud,
+        ):
+            mock_get_settings.return_value = self._mock_settings()
+            mock_queue.return_value.get_total_tracked.return_value = 3
+            mock_queue.return_value.enqueue = AsyncMock()
+
+            fake_job = MagicMock()
+            fake_job.id = "job-123"
+            fake_job.execution_target = "local"
+            mock_crud.create_job = AsyncMock(return_value=fake_job)
+            mock_crud.get_job_by_scoped_name = AsyncMock(return_value=None)
+
+            result = await create_job_with_context(db_session, req)
+            assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_bad_input_returns_400_not_429(self, db_session):
+        """Validation errors (400) should fire before capacity checks (429)."""
+        req = _make_create_request(data_source="domino_dataset", dataset_id=None)
+        # Even if queue is "full", bad input gets 400
+        with pytest.raises(HTTPException) as exc_info:
+            await create_job_with_context(db_session, req)
+        assert exc_info.value.status_code == 400
+
+
+# ===========================================================================
+# get_queue_status includes limits
+# ===========================================================================
+
+
+class TestGetQueueStatusLimits:
+    """Tests for queue status response including capacity limits."""
+
+    def test_queue_status_includes_limits(self):
+        with (
+            patch("app.core.job_queue.get_job_queue") as mock_queue,
+            patch("app.services.job_service.get_settings") as mock_get_settings,
+        ):
+            mock_queue.return_value.get_queue_status.return_value = {
+                "max_concurrent_jobs": 2,
+                "running_jobs": 1,
+                "queued_jobs": 0,
+                "total_tracked": 1,
+                "shutting_down": False,
+            }
+            mock_get_settings.return_value = MagicMock(
+                max_local_queue_size=10,
+                max_domino_queue_size=20,
+            )
+
+            status = get_queue_status()
+            assert status["max_local_queue_size"] == 10
+            assert status["max_domino_queue_size"] == 20
+            assert "running_jobs" in status
