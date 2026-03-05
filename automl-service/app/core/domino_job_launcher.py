@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import shlex
-import subprocess
 from functools import lru_cache
 from typing import Any, Optional
 
@@ -119,9 +118,10 @@ class DominoJobLauncher:
     def _resolve_launch_commit_id() -> tuple[Optional[str], Optional[str]]:
         """Resolve commit used for child Domino jobs.
 
-        Priority:
-        1) Explicit env override
-        2) Current checked-out git commit
+        Only uses Domino-provided env vars which are guaranteed to exist in
+        Domino's repo mirror.  Local ``git rev-parse HEAD`` is intentionally
+        skipped because it may return commits that haven't been synced to
+        Domino yet (e.g. after a push from a workspace).
         """
         for key in (
             "DOMINO_JOB_COMMIT_ID",
@@ -131,17 +131,7 @@ class DominoJobLauncher:
             if value:
                 return value.strip(), key
 
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            commit_id = result.stdout.strip()
-            return (commit_id, "git_head") if commit_id else (None, None)
-        except Exception:
-            return None, None
+        return None, None
 
     @staticmethod
     def _is_commit_not_found_error(error: Exception) -> bool:
@@ -298,18 +288,14 @@ class DominoJobLauncher:
             return resp.json()
         except (httpx.HTTPStatusError, Exception) as e:
             pinned_commit = payload.get("commitId")
-            # If git-derived HEAD cannot be resolved by Domino's repo mirror,
-            # fall back to project default instead of hard failing submission.
-            if (
-                pinned_commit
-                and commit_source == "git_head"
-                and (
-                    self._is_commit_not_found_error(e)
-                    or self._is_uninformative_bad_request(e)
-                )
+            # If the pinned commit cannot be resolved by Domino's repo mirror,
+            # fall back to the project default instead of hard failing.
+            if pinned_commit and (
+                self._is_commit_not_found_error(e)
+                or self._is_uninformative_bad_request(e)
             ):
                 logger.warning(
-                    "Domino could not resolve git-derived commit %s (%s). "
+                    "Domino could not resolve commit %s (%s). "
                     "Retrying launch without commit pin.",
                     str(pinned_commit)[:12],
                     self._summarize_error(e),
