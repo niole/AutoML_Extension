@@ -40,7 +40,7 @@ def _register_domino_project_header_provider():
                     return {"X-Domino-Project-Id": project_id}
                 return {}
 
-        _request_header_provider_registry.register(_DominoProjectHeaderProvider())
+        _request_header_provider_registry.register(_DominoProjectHeaderProvider)
         logger.info("Registered Domino project header provider for MLflow")
     except Exception as exc:
         logger.debug("Could not register Domino project header provider: %s", exc)

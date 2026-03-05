@@ -12,7 +12,7 @@ class DominoProjectHeaderProvider(RequestHeaderProvider):
         pid = os.environ.get("DOMINO_PROJECT_ID", "")
         return {"X-Domino-Project-Id": pid} if pid else {}
 
-_request_header_provider_registry.register(DominoProjectHeaderProvider())
+_request_header_provider_registry.register(DominoProjectHeaderProvider)
 print("Registered. Total providers:", len(_request_header_provider_registry._registry))
 
 for i, p in enumerate(_request_header_provider_registry._registry):
@@ -21,7 +21,7 @@ for i, p in enumerate(_request_header_provider_registry._registry):
 import mlflow, json, urllib.request
 mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:8768"))
 print("\nCreating test experiment...")
-exp_id = mlflow.create_experiment("debug_header_provider_test_v2")
+exp_id = mlflow.create_experiment("debug_header_provider_test_v3")
 print("Created experiment:", exp_id)
 
 url = "%s/api/2.0/mlflow/experiments/get?experiment_id=%s" % (
