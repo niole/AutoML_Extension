@@ -68,6 +68,7 @@ async def deploy_from_job(
     function_name: str = "predict",
     min_replicas: int = 1,
     max_replicas: int = 1,
+    project_id: Optional[str] = None,
 ) -> dict:
     """Deploy a trained model from a completed AutoML job."""
     async with get_db_session() as db:
@@ -107,6 +108,7 @@ async def deploy_from_job(
         min_replicas=min_replicas,
         max_replicas=max_replicas,
         auto_start=True,
+        project_id=project_id,
     )
 
     if not result["success"]:
