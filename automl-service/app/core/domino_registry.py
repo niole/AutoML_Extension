@@ -170,11 +170,13 @@ class DominoModelRegistry:
 
         try:
             with urlopen(req, timeout=60) as resp:
-                body = _json.loads(resp.read())
+                raw = resp.read()
+                body = _json.loads(raw)
             logger.info(
-                "Registered model %s via Domino native API (run %s)",
+                "Registered model %s via Domino native API (run %s). Response: %s",
                 model_name,
                 experiment_run_id,
+                raw[:1000].decode("utf-8", errors="replace"),
             )
             return body
         except HTTPError as exc:
