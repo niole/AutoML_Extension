@@ -409,13 +409,12 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             )
 
             # Auto-register to Domino Model Registry if configured
-            auto_register = os.environ.get("AUTO_REGISTER_MODELS", "false").lower() == "true"
-            if auto_register and model_path and job.enable_mlflow and not settings.standalone_mode:
+            if job.auto_register and model_path and job.enable_mlflow and not settings.standalone_mode:
                 try:
                     registry = get_domino_registry()
                     reg_result = registry.register_model(
                         model_path=model_path,
-                        model_name=f"{job.name}-{job_id[:8]}",
+                        model_name=job.register_name or f"{job.name}-{job_id[:8]}",
                         model_type=job.model_type.value,
                         description=f"AutoML model from job {job.name}",
                         metrics=result.get("metrics", {}),
