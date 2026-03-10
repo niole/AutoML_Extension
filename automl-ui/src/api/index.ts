@@ -1,24 +1,42 @@
 import { getBasePath } from '../utils/basePath'
 
 /**
+ * Extract projectId from a Location-like object (search then hash).
+ */
+function extractProjectId(loc: { search: string; hash: string }): string | undefined {
+  const fromSearch = new URLSearchParams(loc.search).get('projectId')
+  if (fromSearch) return fromSearch
+
+  if (loc.hash) {
+    const fromHash = new URLSearchParams(loc.hash.slice(1)).get('projectId')
+    if (fromHash) return fromHash
+  }
+  return undefined
+}
+
+/**
  * Read projectId from the URL.
  *
- * Checks two locations (Domino's app proxy strips query params, so the
- * hash fragment is the reliable transport):
- *   1. Query string:  ?projectId=TARGET_ID
- *   2. Hash fragment: #projectId=TARGET_ID
+ * Domino loads Apps in an iframe whose src is a clean internal URL with
+ * no query params or hash. The user's projectId lives on the *parent*
+ * frame's URL, so we check:
+ *   1. Current iframe URL (query string, then hash)
+ *   2. Parent frame URL (same-origin only; query string, then hash)
  */
 function getProjectIdFromUrl(): string | undefined {
   try {
-    // 1. Query string (?projectId=...)
-    const fromSearch = new URLSearchParams(window.location.search).get('projectId')
-    if (fromSearch) return fromSearch
+    // 1. Current frame
+    const fromSelf = extractProjectId(window.location)
+    if (fromSelf) return fromSelf
 
-    // 2. Hash fragment (#projectId=...)
-    const hash = window.location.hash
-    if (hash) {
-      const fromHash = new URLSearchParams(hash.slice(1)).get('projectId')
-      if (fromHash) return fromHash
+    // 2. Parent frame (Domino iframe is same-origin)
+    if (window.parent && window.parent !== window) {
+      try {
+        const fromParent = extractProjectId(window.parent.location)
+        if (fromParent) return fromParent
+      } catch {
+        // Cross-origin — ignore
+      }
     }
 
     return undefined
@@ -31,7 +49,7 @@ function getProjectIdFromUrl(): string | undefined {
 // navigation that may strip query params from window.location.
 let _cachedProjectId: string | undefined = getProjectIdFromUrl()
 
-console.log('[ApiClient] module load — href:', window.location.href, 'hash:', window.location.hash, 'cachedProjectId:', _cachedProjectId)
+console.log('[ApiClient] module load — href:', window.location.href, 'parentHref:', (() => { try { return window.parent?.location?.href } catch { return '(cross-origin)' } })(), 'cachedProjectId:', _cachedProjectId)
 
 /**
  * Resolve the current project ID.
