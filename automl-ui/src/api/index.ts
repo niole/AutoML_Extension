@@ -17,6 +17,9 @@ function getProjectIdFromUrl(): string | undefined {
 // navigation that may strip query params from window.location.search.
 let _cachedProjectId: string | undefined = getProjectIdFromUrl()
 
+// Diagnostic: log what the browser sees at module load time
+console.log('[ApiClient] module load — href:', window.location.href, 'search:', window.location.search, 'cachedProjectId:', _cachedProjectId)
+
 /**
  * Resolve the current project ID.
  * Priority: explicit override > cached value from initial URL > live URL.
