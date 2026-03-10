@@ -10,16 +10,26 @@ import { getBasePath } from './utils/basePath'
 import { setProjectId } from './api'
 
 /**
- * Sync ?projectId= from the URL into the API client so the X-Project-Id
- * header is sent on every request. Runs inside BrowserRouter so it has
- * access to React Router's search params.
+ * Sync projectId from both query string and hash fragment into the API
+ * client so the X-Project-Id header is sent on every request.
+ * Domino's app proxy strips query params, so #projectId=... is the
+ * reliable transport.
  */
 function ProjectIdSync() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   useEffect(() => {
-    const id = searchParams.get('projectId')
-    if (id) setProjectId(id)
-  }, [searchParams])
+    // Query string: ?projectId=...
+    const fromSearch = searchParams.get('projectId')
+    if (fromSearch) { setProjectId(fromSearch); return }
+
+    // Hash fragment: #projectId=...
+    const hash = window.location.hash
+    if (hash) {
+      const fromHash = new URLSearchParams(hash.slice(1)).get('projectId')
+      if (fromHash) setProjectId(fromHash)
+    }
+  }, [searchParams, location])
   return null
 }
 

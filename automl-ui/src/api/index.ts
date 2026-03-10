@@ -1,24 +1,37 @@
 import { getBasePath } from '../utils/basePath'
 
 /**
- * Read projectId from URL query parameter (?projectId=...).
- * Returns the value when present, undefined otherwise.
+ * Read projectId from the URL.
+ *
+ * Checks two locations (Domino's app proxy strips query params, so the
+ * hash fragment is the reliable transport):
+ *   1. Query string:  ?projectId=TARGET_ID
+ *   2. Hash fragment: #projectId=TARGET_ID
  */
 function getProjectIdFromUrl(): string | undefined {
   try {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('projectId') ?? undefined
+    // 1. Query string (?projectId=...)
+    const fromSearch = new URLSearchParams(window.location.search).get('projectId')
+    if (fromSearch) return fromSearch
+
+    // 2. Hash fragment (#projectId=...)
+    const hash = window.location.hash
+    if (hash) {
+      const fromHash = new URLSearchParams(hash.slice(1)).get('projectId')
+      if (fromHash) return fromHash
+    }
+
+    return undefined
   } catch {
     return undefined
   }
 }
 
 // Capture projectId eagerly at module load time so it survives React Router
-// navigation that may strip query params from window.location.search.
+// navigation that may strip query params from window.location.
 let _cachedProjectId: string | undefined = getProjectIdFromUrl()
 
-// Diagnostic: log what the browser sees at module load time
-console.log('[ApiClient] module load — href:', window.location.href, 'search:', window.location.search, 'cachedProjectId:', _cachedProjectId)
+console.log('[ApiClient] module load — href:', window.location.href, 'hash:', window.location.hash, 'cachedProjectId:', _cachedProjectId)
 
 /**
  * Resolve the current project ID.
