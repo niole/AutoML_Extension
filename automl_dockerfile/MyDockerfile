@@ -24,6 +24,8 @@ RUN apt-get update && \
         curl \
     # Requirements for node installation
         ca-certificates \
+    # For troubleshooting
+        sqlite3 \
     # Requirement for dominodatalab installation
         git
 
