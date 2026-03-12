@@ -4,6 +4,8 @@
 - shouldn't install node at runtime
 - training job doesn't use the right env, uses DSE
 - how to deal with transient errors in training jobs, which resulted in the job failing?
+- how is local development? requirements would get out of sync with the environment, maybe we should download the 
+requirements from the github repo when building the Dockerfile
 
 # dockerfile changes
 - verify numpy removal
