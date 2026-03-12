@@ -1,16 +1,18 @@
 # TODO
 
 # feature changes
+- we should say that the job name must be unique
+- it is hard to run this locally because all of the dependencies take forever to install and there are no
+instructions for how to do it
 - shouldn't install node at runtime
 - training job doesn't use the right env, uses DSE
 - how to deal with transient errors in training jobs, which resulted in the job failing?
-<<<<<<< Updated upstream
-=======
 - how is local development? requirements would get out of sync with the environment, maybe we should download the 
 requirements from the github repo when building the Dockerfile
 - DOMINO_TRAINING_HARDWARE_TIER_NAME, DOMINO_EDA_HARDWARE_TIER_NAME not used
 - i think job config should show what environment and hwt will be used for the job
->>>>>>> Stashed changes
+- make training job stateless so that doesn't depend on shared sqlitedb OR programmatically share the dataset and then mount it in the user's project.....idk
+- information in the extension-design.md makes assumptions about the file paths used, and should probably be generalized
 
 # dockerfile changes
 - verify numpy removal
@@ -27,5 +29,4 @@ need to verify that test_job_service covers this for create_job_with_context
 - test advanced configuration in job launching
 - if you recreate the extension, the sqlitedb data goes missing...maybe there is a required setup step so that we ensure
 the app uses a domino dataset
-
-
+- It seems that we use a sqlitedb shared dataset in order to share state between the extension and the target project

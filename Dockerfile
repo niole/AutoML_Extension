@@ -79,7 +79,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
-      
+
 # Add domino user to sudoers
 RUN echo "domino ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
@@ -142,7 +142,7 @@ RUN pip install \
     "holidays>=0.33" \
     "convertdate>=2.4.0" \
     "lunarcalendar>=0.0.9" \
-    "tqdm>=4.65.0" 
+    "tqdm>=4.65.0"
 
 # ============================================
 # AutoGluon Installation (All Modules)

@@ -17,6 +17,9 @@ RUN apt-get update && \
     apt-get upgrade -y -o Dir::Etc::SourceList=/etc/apt/security.sources.list && \
     apt-get install -y \
         apt-utils \
+    # add C compiler for some of the python packages
+        build-essential \
+        gcc \
     # Requirements for Domino executions
         curl \
     # Requirements for node installation
@@ -51,7 +54,10 @@ RUN pip install mlflow==$MLFLOW_VERSION
 # ============================================
 # Torch
 # ============================================
-RUN pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install \
+    torch==2.1.0 \
+    torchvision==0.16.0 \
+    torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu
 
 # ============================================
 # AutoGluon Core Dependencies
@@ -115,21 +121,21 @@ RUN pip install \
     "altair>=5.1.0"
 
 
-## ============================================
-## Model Serving (FastAPI) TODO it bothers me that we replicate this from compute-environment-builder
-## ============================================
-#RUN pip install \
-#    "fastapi>=0.104.0" \
-#    "uvicorn[standard]>=0.24.0" \
-#    "python-multipart>=0.0.6" \
-#    "httpx>=0.25.0" \
-#    "starlette>=0.27.0" \
-#    "pydantic>=2.4.0" \
-#    "pydantic-settings>=2.0.0" \
-#    "uwsgi"
+# ============================================
+# Model Serving (FastAPI)
+# ============================================
+RUN pip install \
+    "fastapi>=0.104.0" \
+    "uvicorn[standard]>=0.24.0" \
+    "python-multipart>=0.0.6" \
+    "httpx>=0.25.0" \
+    "starlette>=0.27.0" \
+    "pydantic>=2.4.0" \
+    "pydantic-settings>=2.0.0" \
+    "uwsgi"
 
 # ============================================
-# Additional Data Science Utilities TODO probably don't need?
+# Additional Data Science Utilities
 # ============================================
 RUN pip install \
     "pyarrow>=14.0.0" \
@@ -137,6 +143,7 @@ RUN pip install \
     "openpyxl>=3.1.0" \
     "xlrd>=2.0.0" \
     "h5py>=3.10.0" \
+    "aiosqlite" \
     "sqlalchemy>=2.0.0" \
     "s3fs>=2023.10.0" \
     "pyyaml>=6.0" \
@@ -150,7 +157,7 @@ RUN pip install \
     "typing-extensions>=4.8.0"
 
 # ============================================
-# SHAP and Model Interpretability TODO what?
+# SHAP and Model Interpretability
 # ============================================
 RUN pip install \
     "shap>=0.43.0" \
