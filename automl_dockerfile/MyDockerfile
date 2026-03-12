@@ -109,6 +109,9 @@ RUN pip install \
         "autogluon.core>=1.1.0" \
         "autogluon.features>=1.1.0" \
         "autogluon.tabular>=1.1.0" \
+        #"autogluon.tabular[fastai]==1.5.0" \
+        # Needed to fix fastai import for NeuralNetFastAI during training
+        ipykernel \
         "autogluon.timeseries>=1.1.0"
 
 # ============================================

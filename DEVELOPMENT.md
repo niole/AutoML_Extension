@@ -38,6 +38,8 @@ the extension has access to. The user data should probably be PRIVATE/RETAIN USE
 - the data uploaded to the extension grows endlessly
 
 ## other
+- is "Storage cleanup" button only available to SysAdmins?
+- got this warning from autogluon in my training job:  WARNING:app.core.trainers.tabular:Could not compute feature importance: Feature importance `dataset` cannot be None if `feature_stage=='original'`. A test dataset must be specified.
 - there is an active domino jobs setting...probably useful for the in memory "jobs", for domino jobs though?
 - test advanced configuration in job launching
 - job creation in sqlite db can fail and result in inconsistent state between domino and local db, job_service.py,
