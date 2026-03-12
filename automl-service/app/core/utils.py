@@ -20,7 +20,9 @@ _MOUNT_ROOTS = [
     "/domino/datasets/local/",
 ]
 
-
+# TODO I am not sure if this is necessary if the correct environment variables are set
+# I personally wouldn't want some code to guess a file path for me
+# It could cause code to write to the wrong location and cause annoying bugs
 def remap_shared_path(path: str) -> str:
     """Remap an absolute file path when running in a different Domino project.
 
@@ -45,7 +47,6 @@ def remap_shared_path(path: str) -> str:
                 continue
             candidate = candidate_root + relative
 
-            logger.info(f"CANDIDATE PATH IS {candidate}")
             if os.path.exists(candidate):
                 logger.info(
                     "Remapped path %s -> %s (cross-project mount)",
