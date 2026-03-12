@@ -21,12 +21,8 @@ requirements from the github repo when building the Dockerfile
 - test making registered model with job
 
 # dev
-- understand how jobs are launched
+- It seems that we use a sqlitedb shared dataset in order to share state between the extension and the target project
 - there is an active domino jobs setting...probably useful for the in memory "jobs", for domino jobs though?
 - job creation in sqlite db can fail and result in inconsistent state between domino and local db, job_service.py,
 need to verify that test_job_service covers this for create_job_with_context
-- does the code that launches the job use the right env?
 - test advanced configuration in job launching
-- if you recreate the extension, the sqlitedb data goes missing...maybe there is a required setup step so that we ensure
-the app uses a domino dataset
-- It seems that we use a sqlitedb shared dataset in order to share state between the extension and the target project
