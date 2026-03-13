@@ -7,7 +7,7 @@
 #   ./app.sh --backend    # Backend only (API server)
 #   ./app.sh --frontend   # Frontend only (Vite dev server for development)
 #   ./app.sh --dev        # Dev mode: backend + Vite dev server with HMR
-
+#   ./app.sh --prod       # Uses all pre-installed deps from environment
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -133,7 +133,7 @@ build_frontend() {
     echo "Building frontend..."
     cd "${SCRIPT_DIR}/automl-ui"
     echo "Node.js: $(node --version), npm: $(npm --version)"
-    if [ $1 != "prod" ]
+    if [ "$1" != "prod" ]
     then
         npm install --silent
     fi
@@ -270,7 +270,7 @@ case "$MODE" in
         echo "  API:      /svc/v1/*"
         echo "  Frontend: / (served from $STATIC_DIR)"
         echo ""
-
+        export RELOAD="false"
         start_backend "$PORT"
         ;;
 
