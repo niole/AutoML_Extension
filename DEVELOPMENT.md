@@ -11,18 +11,12 @@
 
 ## other
 - we should say that the job name must be unique
-- it is hard to run this locally because all of the dependencies take forever to install and there are no
-instructions for how to do it
-- how to deal with transient errors in training jobs, which resulted in the job failing?
+- it is hard to run this locally because it depends on domino auth and assets
+- how to deal with transient errors in training jobs, which resulted in the job failing? rerun jobs don't appear in extension
 - how is local development? requirements would get out of sync with the environment, maybe we should download the 
 requirements from the github repo when building the Dockerfile
 - i think job config should show what environment and hwt will be used for the job, also project target and user
 - information in the extension-design.md makes assumptions about the file paths used, and should probably be generalized
-
-# dockerfile changes
-- verify numpy removal
-- test doing eda with dataset
-- test making registered model with job
 
 # notes
 
@@ -38,7 +32,6 @@ the extension has access to. The user data should probably be PRIVATE/RETAIN USE
 - the data uploaded to the extension grows endlessly
 
 ## other
-- is "Storage cleanup" button only available to SysAdmins?
 - got this warning from autogluon in my training job:  WARNING:app.core.trainers.tabular:Could not compute feature importance: Feature importance `dataset` cannot be None if `feature_stage=='original'`. A test dataset must be specified.
 - there is an active domino jobs setting...probably useful for the in memory "jobs", for domino jobs though?
 - test advanced configuration in job launching
