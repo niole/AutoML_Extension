@@ -31,9 +31,13 @@ router = APIRouter()
 @handle_errors("Failed to list datasets", detail_prefix="Failed to list datasets")
 async def list_datasets(
     dataset_manager=Depends(get_dataset_manager),
+    project_id: str | None = Query(
+        default=None,
+        description="Domino project ID to scope dataset listing (optional)",
+    ),
 ):
     """List available datasets from the active runtime dataset mount path."""
-    return await list_datasets_response(dataset_manager)
+    return await list_datasets_response(dataset_manager, project_id=project_id)
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
@@ -93,6 +97,10 @@ async def preview_file_by_path(request: FilePreviewRequest):
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
     file: UploadFile = File(..., description="CSV or Parquet file to upload"),
+    project_id: str | None = Query(
+        default=None,
+        description="Domino project ID where the dataset should be created (optional)",
+    ),
 ):
     """Upload a file for training."""
-    return await save_uploaded_file(file)
+    return await save_uploaded_file(file, project_id=project_id)

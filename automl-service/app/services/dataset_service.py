@@ -21,6 +21,12 @@ from app.api.schemas.dataset import (
 from app.config import get_settings
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.core.dataset_manager import DominoDatasetManager
+from app.core.domino_datasets import (
+    ensure_dataset_in_project,
+    wait_for_dataset_mount,
+    snapshot_dataset,
+)
+from app.core import domino_http
 
 ALLOWED_UPLOAD_EXTENSIONS = (".csv", ".parquet", ".pq")
 DEFAULT_PREVIEW_LIMIT = 100
@@ -100,7 +106,7 @@ def filter_local_datasets(
                     found_on_mount = True
                     break
 
-        if found_on_mount or ds_id.startswith("domino:"):
+        if found_on_mount or ds_id.startswith("domino:") or ds_id.startswith("local:"):
             filtered_datasets.append(ds)
 
     return filtered_datasets
@@ -108,8 +114,41 @@ def filter_local_datasets(
 
 async def list_datasets_response(
     dataset_manager: DominoDatasetManager,
+    project_id: Optional[str] = None,
 ) -> DatasetListResponse:
     """List available local datasets in API response shape."""
+    settings = get_settings()
+    # If a Domino project is provided, list via Domino API and then filter to mounted
+    if project_id and settings.is_domino_environment:
+        try:
+            # Use v2 listing with project filter
+            # GET /api/datasetrw/v2/datasets?projectIdsToInclude=<id>&limit=1000
+            path = f"/api/datasetrw/v2/datasets?projectIdsToInclude={project_id}&limit=1000&includeProjectInfo=true"
+            resp = await domino_http.domino_request("GET", path)
+            data = resp.json()
+            items = (data or {}).get("datasets") or (data or {}).get("items") or []
+            detailed: list[DatasetResponse] = []
+            for it in items:
+                ds_id = str(it.get("id") or it.get("datasetId") or "").strip()
+                if not ds_id:
+                    continue
+                # Resolve full details and mounted files via manager (uses v1 getDataset + mount resolution)
+                ds = await dataset_manager.get_dataset(ds_id)
+                if ds:
+                    detailed.append(ds)
+            dataset_mount_roots = get_dataset_mount_roots()
+            filtered_datasets = filter_local_datasets(detailed, local_paths=dataset_mount_roots)
+            logger.info(
+                "Returning %s datasets (filtered from %s) using roots %s for project %s",
+                len(filtered_datasets),
+                len(detailed),
+                ", ".join(dataset_mount_roots) if dataset_mount_roots else "(none)",
+                project_id,
+            )
+            return DatasetListResponse(datasets=filtered_datasets, total=len(filtered_datasets))
+        except Exception as e:
+            logger.warning("Failed Domino API dataset list for project %s: %s; falling back to mounted scan", project_id, e)
+
     datasets = await dataset_manager.list_datasets()
     dataset_mount_roots = get_dataset_mount_roots()
     filtered_datasets = filter_local_datasets(datasets, local_paths=dataset_mount_roots)
@@ -288,7 +327,7 @@ async def build_compat_dataset_preview_payload(
     raise HTTPException(status_code=400, detail="Either file_path or dataset_id is required")
 
 
-async def save_uploaded_file(file: UploadFile) -> FileUploadResponse:
+async def save_uploaded_file(file: UploadFile, project_id: Optional[str] = None) -> FileUploadResponse:
     """Save an uploaded dataset file and return metadata."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -300,18 +339,71 @@ async def save_uploaded_file(file: UploadFile) -> FileUploadResponse:
             detail=f"File type not supported. Allowed: {list(ALLOWED_UPLOAD_EXTENSIONS)}",
         )
 
-    upload_dir = get_settings().uploads_path
-    os.makedirs(upload_dir, exist_ok=True)
+    settings = get_settings()
+    safe_filename = f"{str(uuid.uuid4())[:8]}_{file.filename}"
+    file_path: Optional[str] = None
 
-    unique_id = str(uuid.uuid4())[:8]
-    safe_filename = f"{unique_id}_{file.filename}"
-    file_path = os.path.join(upload_dir, safe_filename)
+    # Prefer Domino Dataset flow when Domino environment is available
+    if settings.is_domino_environment and project_id:
+        try:
+            # 1) Ensure a dataset named 'automl_ext' exists in the specified project
+            dataset_name = "automl_ext"
+            ds = await ensure_dataset_in_project(
+                project_id=project_id,
+                dataset_name=dataset_name,
+                description="AutoML Extension staging dataset",
+            )
+            dataset_id = ds.get("id") or ds.get("datasetId")
+            dataset_name = ds.get("name") or ds.get("datasetName") or dataset_name
 
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
+            # do not use shared dataset linking
+
+            # 2) Wait briefly for mount to appear, then write file into mount root
+            mount_path = await wait_for_dataset_mount(dataset_name, timeout_s=20.0)
+            if not mount_path:
+                # Fall back to first candidate path
+                roots = resolve_dataset_mount_paths(fallback_path=settings.datasets_path)
+                mount_path = os.path.join(roots[0], dataset_name) if roots else None
+            if not mount_path:
+                raise RuntimeError("Dataset mount path could not be resolved")
+
+            os.makedirs(mount_path, exist_ok=True)
+            file_path = os.path.join(mount_path, safe_filename)
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            # 3) Create a snapshot including this file
+            try:
+                await snapshot_dataset(dataset_id, [safe_filename])
+            except Exception as e:
+                # Not fatal for preview; log and continue
+                logger.warning("Failed to snapshot dataset %s: %s", dataset_id, e)
+        except Exception as exc:
+            logger.warning("Domino dataset upload flow failed, falling back to local save: %s", exc)
+            # Reset file stream to start before saving locally
+            try:
+                file.file.seek(0)
+            except Exception:
+                pass
+            # Save under local uploads directory
+            upload_dir = settings.uploads_path
+            os.makedirs(upload_dir, exist_ok=True)
+            file_path = os.path.join(upload_dir, safe_filename)
+            try:
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+            except Exception as inner_exc:
+                raise HTTPException(status_code=500, detail=f"Failed to save file: {inner_exc}") from inner_exc
+    else:
+        # Standalone/local behavior — write into uploads directory
+        upload_dir = settings.uploads_path
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, safe_filename)
+        try:
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
 
     try:
         if file_ext == ".csv":

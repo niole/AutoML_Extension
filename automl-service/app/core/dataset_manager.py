@@ -226,6 +226,40 @@ class DominoDatasetManager:
             for dataset in self._list_mounted_dataset_entries(dataset_mount_path):
                 # Keep first discovered dataset when ids collide across roots.
                 merged.setdefault(dataset.id, dataset)
+        # Include local uploads as a synthetic dataset when not in Domino
+        if not self.settings.is_domino_environment:
+            uploads_dir = self.settings.uploads_path
+            if os.path.isdir(uploads_dir):
+                files: list[DatasetFileResponse] = []
+                total_size = 0
+                for root, _, filenames in os.walk(uploads_dir):
+                    for filename in filenames:
+                        if not self._is_supported_file(filename):
+                            continue
+                        file_path = os.path.join(root, filename)
+                        rel_path = os.path.relpath(file_path, uploads_dir)
+                        try:
+                            stat = os.stat(file_path)
+                            size = stat.st_size
+                        except OSError:
+                            size = 0
+                        files.append(
+                            DatasetFileResponse(name=rel_path, path=file_path, size=size)
+                        )
+                        total_size += size
+                if files:
+                    merged.setdefault(
+                        "local:uploads",
+                        DatasetResponse(
+                            id="local:uploads",
+                            name="uploads",
+                            path=uploads_dir,
+                            description="Local uploads dataset",
+                            size_bytes=total_size,
+                            file_count=len(files),
+                            files=files,
+                        ),
+                    )
         return list(merged.values())
 
     async def get_dataset(self, dataset_id: str) -> Optional[DatasetResponse]:
@@ -286,6 +320,13 @@ class DominoDatasetManager:
     ) -> str:
         """Get the file path for a dataset file."""
         if dataset_id.startswith("local:"):
+            # Two local schemes:
+            # 1) local:<filename> under datasets_path (legacy)
+            # 2) local:uploads — files live under uploads_path
+            if dataset_id == "local:uploads":
+                if not file_name:
+                    raise FileNotFoundError("file_name is required for local:uploads dataset")
+                return os.path.join(self.settings.uploads_path, file_name)
             file_name = dataset_id.replace("local:", "")
             return os.path.join(self.settings.datasets_path, file_name)
 

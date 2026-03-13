@@ -6,8 +6,9 @@ interface DatasetListResponse {
   total: number
 }
 
-export async function getDatasets(): Promise<DatasetListResponse> {
-  const response = await api.get<DatasetListResponse>('/datasets')
+export async function getDatasets(projectId?: string): Promise<DatasetListResponse> {
+  const url = projectId ? `/datasets?project_id=${encodeURIComponent(projectId)}` : '/datasets'
+  const response = await api.get<DatasetListResponse>(url)
   return response.data
 }
 
@@ -31,6 +32,27 @@ export async function getDatasetPreview(
   return response.data
 }
 
+export async function getDatasetPreviewFromDataset(
+  datasetId: string,
+  fileName: string,
+  rows: number = 100
+): Promise<DatasetPreview> {
+  const response = await api.get<DatasetPreview>(`/datasets/${encodeURIComponent(datasetId)}/preview`, {
+    params: { file_name: fileName, rows }
+  })
+  return response.data
+}
+
+export async function getDatasetSchemaFromDataset(
+  datasetId: string,
+  fileName: string
+): Promise<DatasetSchema> {
+  const response = await api.get<DatasetSchema>(`/datasets/${encodeURIComponent(datasetId)}/schema`, {
+    params: { file_name: fileName }
+  })
+  return response.data
+}
+
 export async function getDatasetSchema(filePath: string): Promise<DatasetSchema> {
   // Get schema by previewing with 1 row
   const preview = await getDatasetPreview(filePath, 1)
@@ -43,9 +65,10 @@ export async function getDatasetSchema(filePath: string): Promise<DatasetSchema>
   }
 }
 
-export async function uploadFile(file: File): Promise<FileUploadResponse> {
+export async function uploadFile(file: File, projectId?: string): Promise<FileUploadResponse> {
   const formData = new FormData()
   formData.append('file', file)
-  const response = await api.post<FileUploadResponse>('/upload', formData)
+  const url = projectId ? `/upload?project_id=${encodeURIComponent(projectId)}` : '/upload'
+  const response = await api.post<FileUploadResponse>(url, formData)
   return response.data
 }

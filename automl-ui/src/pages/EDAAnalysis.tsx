@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useDatasets, useUploadFile, useDatasetPreview } from '../hooks/useDatasets'
+import { useDatasets, useUploadFile, useDatasetPreview, useDatasetPreviewFromDataset } from '../hooks/useDatasets'
 import { useEdaAsyncProfiling } from '../hooks/useEdaAsyncProfiling'
 import { useProfiling } from '../hooks/useProfiling'
 import { useStore } from '../store'
@@ -16,7 +16,8 @@ import { TimeSeriesConfigPanel } from '../components/eda/TimeSeriesConfigPanel'
 function EDAAnalysis() {
   const { dominoJobs } = useCapabilities()
   const [searchParams] = useSearchParams()
-  const { data: datasetsData, isLoading: loadingDatasets, error: datasetsError } = useDatasets()
+  const projectIdFromQuery = useMemo(() => searchParams.get('project_id') || undefined, [searchParams])
+  const { data: datasetsData, isLoading: loadingDatasets, error: datasetsError } = useDatasets(projectIdFromQuery)
   const uploadMutation = useUploadFile()
   const addNotification = useStore((state) => state.addNotification)
   const {
@@ -92,11 +93,24 @@ function EDAAnalysis() {
   }, [datasets, loadingDatasets, querySelectionApplied, searchParams])
 
   const offset = (currentPage - 1) * pageSize
-  const { data: preview, isLoading: previewLoading, error: previewError } = useDatasetPreview(
-    selectedFilePath || '',
+  const { data: uploadPreview, isLoading: uploadPreviewLoading, error: uploadPreviewError } = useDatasetPreview(
+    sourceType === 'upload' ? (selectedFilePath || '') : '',
     pageSize,
     offset
   )
+  const rowsToFetch = currentPage * pageSize
+  const { data: datasetPreviewRaw, isLoading: datasetPreviewLoading, error: datasetPreviewError } = useDatasetPreviewFromDataset(
+    sourceType === 'dataset' ? selectedDataset?.id : undefined,
+    sourceType === 'dataset' ? selectedFileName || undefined : undefined,
+    rowsToFetch
+  )
+  const datasetPreview = datasetPreviewRaw
+    ? {
+        ...datasetPreviewRaw,
+        rows: (datasetPreviewRaw.rows || []).slice(Math.max(0, rowsToFetch - pageSize)),
+        preview_rows: Math.min(pageSize, datasetPreviewRaw.preview_rows || 0),
+      }
+    : undefined
 
   const {
     asyncDominoJobId,
@@ -115,21 +129,22 @@ function EDAAnalysis() {
   })
 
   useEffect(() => {
-    if (!selectedFilePath) return
+    // Only auto-profile uploads; skip for Domino datasets to avoid reading mounts
+    if (!selectedFilePath || sourceType !== 'upload') return
     if (edaExecutionTarget === 'local') {
       resetAsyncState()
       void profileFile(selectedFilePath)
       return
     }
     void startAsyncTabularProfiling(selectedFilePath, sampleSize, samplingStrategy, stratifyColumn || undefined)
-  }, [selectedFilePath, edaExecutionTarget, profileFile, resetAsyncState, startAsyncTabularProfiling])
+  }, [selectedFilePath, sourceType, edaExecutionTarget, profileFile, resetAsyncState, startAsyncTabularProfiling])
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return
       const file = acceptedFiles[0]
       try {
-        const result = await uploadMutation.mutateAsync(file)
+        const result = await uploadMutation.mutateAsync({ file, projectId: projectIdFromQuery })
         setSelectedFilePath(result.file_path)
         setSelectedFileName(result.file_name)
       } catch (error) {
@@ -139,7 +154,7 @@ function EDAAnalysis() {
         )
       }
     },
-    [uploadMutation, addNotification]
+    [uploadMutation, addNotification, projectIdFromQuery]
   )
 
   const handleSelectDataset = (dataset: Dataset) => {
@@ -148,7 +163,6 @@ function EDAAnalysis() {
 
   const handleSelectFile = (file: DatasetFile) => {
     resetAsyncState()
-    setSelectedFilePath(file.path)
     setSelectedFileName(file.name)
     setTransforms([])
   }
@@ -272,7 +286,8 @@ function EDAAnalysis() {
     : tsError
 
   // If no file selected, show file selection UI
-  if (!selectedFilePath) {
+  const hasDatasetSelection = sourceType === 'dataset' && !!selectedDataset && !!selectedFileName
+  if (!selectedFilePath && !hasDatasetSelection) {
     return (
       <div className="space-y-6">
         {breadcrumb}
@@ -383,11 +398,11 @@ function EDAAnalysis() {
       )}
 
       <ProfiledDataView
-        selectedFilePath={selectedFilePath}
+        selectedFilePath={selectedFilePath || ''}
         selectedFileName={selectedFileName!}
-        preview={preview}
-        previewLoading={previewLoading}
-        previewError={previewError}
+        preview={hasDatasetSelection ? datasetPreview : uploadPreview}
+        previewLoading={hasDatasetSelection ? datasetPreviewLoading : uploadPreviewLoading}
+        previewError={hasDatasetSelection ? datasetPreviewError : uploadPreviewError}
         profile={profile}
         profilingLoading={effectiveTabularLoading}
         profilingError={effectiveTabularError}

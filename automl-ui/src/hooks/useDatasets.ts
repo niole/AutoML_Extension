@@ -1,10 +1,10 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { getDatasets, getDataset, getDatasetPreview, getDatasetSchema, uploadFile } from '../api/datasets'
+import { getDatasets, getDataset, getDatasetPreview, getDatasetSchema, getDatasetPreviewFromDataset, getDatasetSchemaFromDataset, uploadFile } from '../api/datasets'
 
-export function useDatasets() {
+export function useDatasets(projectId?: string) {
   return useQuery({
-    queryKey: ['datasets'],
-    queryFn: getDatasets,
+    queryKey: ['datasets', projectId],
+    queryFn: () => getDatasets(projectId),
   })
 }
 
@@ -32,8 +32,24 @@ export function useDatasetSchema(filePath: string) {
   })
 }
 
+export function useDatasetPreviewFromDataset(datasetId?: string, fileName?: string, rows: number = 100) {
+  return useQuery({
+    queryKey: ['datasetPreviewById', datasetId, fileName, rows],
+    queryFn: () => getDatasetPreviewFromDataset(datasetId!, fileName!, rows),
+    enabled: !!datasetId && !!fileName,
+  })
+}
+
+export function useDatasetSchemaFromDataset(datasetId?: string, fileName?: string) {
+  return useQuery({
+    queryKey: ['datasetSchemaById', datasetId, fileName],
+    queryFn: () => getDatasetSchemaFromDataset(datasetId!, fileName!),
+    enabled: !!datasetId && !!fileName,
+  })
+}
+
 export function useUploadFile() {
   return useMutation({
-    mutationFn: (file: File) => uploadFile(file),
+    mutationFn: (payload: { file: File; projectId?: string }) => uploadFile(payload.file, payload.projectId),
   })
 }

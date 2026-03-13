@@ -1,16 +1,19 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useDropzone } from 'react-dropzone'
 import { CloudArrowUpIcon, CircleStackIcon, CheckCircleIcon, DocumentIcon } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import { useWizard } from '../../hooks/useWizard'
-import { useDatasets, useUploadFile, useDatasetPreview } from '../../hooks/useDatasets'
+import { useDatasets, useUploadFile, useDatasetPreviewFromDataset } from '../../hooks/useDatasets'
 import { useStore } from '../../store'
 import Spinner from '../common/Spinner'
 import { Dataset, DatasetFile } from '../../types/dataset'
 
 function Step1DataSource() {
   const { dataSource, setDataSource } = useWizard()
-  const { data: datasetsData, isLoading: loadingDatasets, error: datasetsError } = useDatasets()
+  const [searchParams] = useSearchParams()
+  const projectIdFromQuery = useMemo(() => searchParams.get('project_id') || undefined, [searchParams])
+  const { data: datasetsData, isLoading: loadingDatasets, error: datasetsError } = useDatasets(projectIdFromQuery)
   const uploadMutation = useUploadFile()
   const addNotification = useStore((state) => state.addNotification)
   const [sourceType, setSourceType] = useState<'upload' | 'domino_dataset'>(
@@ -21,11 +24,12 @@ function Step1DataSource() {
   const datasets = datasetsData?.datasets || []
   const datasetLoadError = datasetsError instanceof Error ? datasetsError.message : null
 
-  // Fetch preview/schema only for Domino datasets (uploaded files already have columns from upload response)
-  const previewFilePath = dataSource?.type === 'domino_dataset' && dataSource?.filePath ? dataSource.filePath : ''
-  const { data: previewData, isLoading: loadingPreview } = useDatasetPreview(
-    previewFilePath,
-    10 // Only fetch 10 rows to get columns
+  // Fetch preview only for Domino datasets by datasetId + fileName (no mount paths)
+  const previewRows = 10
+  const { data: previewData, isLoading: loadingPreview } = useDatasetPreviewFromDataset(
+    dataSource?.type === 'domino_dataset' ? dataSource.datasetId : undefined,
+    dataSource?.type === 'domino_dataset' ? dataSource.fileName : undefined,
+    previewRows
   )
 
   const onDrop = useCallback(
@@ -34,7 +38,7 @@ function Step1DataSource() {
 
       const file = acceptedFiles[0]
       try {
-        const result = await uploadMutation.mutateAsync(file)
+        const result = await uploadMutation.mutateAsync({ file, projectId: projectIdFromQuery })
         setDataSource({
           type: 'upload',
           filePath: result.file_path,
@@ -72,12 +76,11 @@ function Step1DataSource() {
   }
 
   const handleSelectFile = async (dataset: Dataset, file: DatasetFile) => {
-    // Set the file path - the useDatasetPreview hook will fetch columns
+    // Only keep dataset id + file name (no file path from mounts)
     setDataSource({
       type: 'domino_dataset',
       datasetId: dataset.id,
       fileName: file.name,
-      filePath: file.path,
     })
   }
 
