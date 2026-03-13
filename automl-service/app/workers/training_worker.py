@@ -167,13 +167,13 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 data_path = remap_shared_path(job.file_path)
                 await crud.add_job_log(db, job_id, f"Using uploaded file: {data_path}")
 
+            # TODO this log message is INFO but it claims it's DEBUG?
             logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
             await crud.add_job_log(db, job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO")
 
             await _check_cancelled(job_id, db)
 
             # Check if file exists
-            import os
             if not os.path.exists(data_path):
                 logger.error(f"[TRAINING DEBUG] FILE NOT FOUND: {data_path}")
                 await crud.add_job_log(db, job_id, f"[DEBUG] FILE DOES NOT EXIST: {data_path}", "ERROR")
