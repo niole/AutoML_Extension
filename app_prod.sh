@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./app.sh --prod
+RELOAD="false" ./app.sh --prod
