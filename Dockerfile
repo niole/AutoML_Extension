@@ -18,7 +18,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV DOMINO_USER=$DUSER
 ENV DOMINO_GROUP=$DGROUP
 ENV MLFLOW_VERSION=3.2.0
-ENV DOMINO_PYTHON_SDK_VERSION=2.0.0
 
 # Set Python environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -45,7 +44,7 @@ RUN apt-get update && \
         ca-certificates \
     # For troubleshooting
         sqlite3 \
-    # Requirement for dominodatalab installation
+    # Requirement for frontend installation
         git
 
 #
@@ -241,11 +240,6 @@ RUN pip install \
     "httpx>=0.27.0" \
     "feedparser>=6.0.10" \
     "pdfplumber>=0.10.0"
-
-# ============================================
-# Domino SDK, install last
-# ============================================
-RUN pip install "dominodatalab[agents] @ git+https://github.com/dominodatalab/python-domino.git@release-$DOMINO_PYTHON_SDK_VERSION"
 
 # Cleanup after apt package installs
 RUN rm -rf /var/lib/apt/lists/*
