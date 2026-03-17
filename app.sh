@@ -138,7 +138,7 @@ build_frontend() {
         npm install --silent
         npm run build
     else
-        echo "This should only run in Domino"
+        echo "Using frontend assets built in the Domino Environment. This should only run in Domino"
         cp -r $HOME/AutoML_Extension/automl-ui/dist dist
         cp -r $HOME/AutoML_Extension/automl-ui/node_modules node_modules
     fi
