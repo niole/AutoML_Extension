@@ -139,8 +139,8 @@ build_frontend() {
         npm run build
     else
         echo "This should only run in Domino"
-        cp -r $HOME/AutoML_Extension/automl-ui/dist automl-ui
-        cp -r $HOME/AutoML_Extension/automl-ui/node_modules automl-ui
+        cp -r $HOME/AutoML_Extension/automl-ui/dist dist
+        cp -r $HOME/AutoML_Extension/automl-ui/node_modules node_modules
     fi
 
     echo "Listing and printing"
