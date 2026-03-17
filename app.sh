@@ -143,10 +143,6 @@ build_frontend() {
         cp -r $HOME/AutoML_Extension/automl-ui/node_modules node_modules
     fi
 
-    echo "Listing and printing"
-    ls
-    pwd
-
     # Generate runtime config (empty API_URL = same origin)
     cat > dist/config.js << 'JSEOF'
 window.APP_CONFIG = { API_URL: "" };
