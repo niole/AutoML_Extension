@@ -44,7 +44,7 @@ RUN apt-get update && \
         ca-certificates \
     # For troubleshooting
         sqlite3 \
-    # Requirement for frontend installation
+    # Requirement for extension FE deps installation
         git
 
 #
