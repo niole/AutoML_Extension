@@ -2,7 +2,9 @@
 # AutoGluon-powered environment for Tabular, TimeSeries, and Multimodal ML
 # Compatible with Domino Data Lab compute environments
 
-# FROM python:3.10-slim-bullseye
+#
+# Required Domino Environment Base Image: python:3.10-slim-bullseye
+#
 
 LABEL maintainer="Domino Data Lab"
 LABEL description="AutoGluon AutoML environment for Domino Data Lab"
