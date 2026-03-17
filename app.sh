@@ -136,8 +136,12 @@ build_frontend() {
     if [ "$1" != "prod" ]
     then
         npm install --silent
+        npm run build
+    else
+        echo "This should only run in Domino"
+        cp -r $HOME/$DOMINO_USER/AutoML_Extension/automl-ui/dist automl-ui
+        cp -r $HOME/$DOMINO_USER/AutoML_Extension/automl-ui/node_modules automl-ui
     fi
-    npm run build
 
     # Generate runtime config (empty API_URL = same origin)
     cat > dist/config.js << 'JSEOF'

@@ -58,10 +58,12 @@ RUN if ! id 12574 >/dev/null 2>&1; then \
 
 RUN chown -R ${DOMINO_USER}:${DOMINO_GROUP} "/home/${DOMINO_USER}"
 
+WORKDIR /home/${DOMINO_USER}
+
 # TODO refactor the pip installations to also use this
 RUN git clone https://github.com/niole/AutoML_Extension.git --depth 1 --branch $EXTENSION_VERSION
 
-WORKDIR AutoML_Extension
+WORKDIR /home/${DOMINO_USER}/AutoML_Extension
 
 #
 # Install frontend dependencies
@@ -71,9 +73,12 @@ WORKDIR AutoML_Extension
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y nodejs
 
-# Install npm packages
-RUN cd automl-ui && npm i -g
+# Install npm packages and build frontend
+RUN cd automl-ui && npm i && npm run build
 
+WORKDIR /
+
+#
 # Install backend/job dependencies
 #
 
@@ -244,8 +249,3 @@ RUN pip install "dominodatalab[agents] @ git+https://github.com/dominodatalab/py
 
 # Cleanup after apt package installs
 RUN rm -rf /var/lib/apt/lists/*
-
-# Cleanup git repo used for package installation
-RUN rm -rf $HOME/AutoML_Extension
-
-WORKDIR /
