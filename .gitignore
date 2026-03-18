@@ -10,6 +10,7 @@ automl-service/mlruns/
 automl.db
 **/*/automl.db
 automl-service/uploads/
+automl-service/test-reports
 
 # Node.js
 node_modules/
