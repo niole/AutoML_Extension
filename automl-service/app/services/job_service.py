@@ -21,6 +21,7 @@ from app.api.schemas.job import (
     RegisterModelResponse,
 )
 from app.config import get_settings
+from app.core.context.user import get_viewing_user
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.db import crud

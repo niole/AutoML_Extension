@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import httpx
 
+from app.api.generated.domino_public_api_client.client import Client as DominoApiClient
 from app.core.context.auth import get_request_auth_header
 from app.config import get_settings
 
@@ -58,6 +59,17 @@ async def get_domino_auth_headers() -> dict[str, str]:
 
     return headers
 
+def get_domino_public_api_client_sync() -> DominoApiClient:
+    """Create a Domino Public API client with auth, which uses the
+    Authorization header if present, fallsback to DOMINO_API_KEY/DOMINO_USER_API_KEY/token file
+    If none is available, none is set.
+    """
+    headers = get_sync_auth_headers()
+
+    # Base URL
+    base_url = resolve_domino_api_host()
+
+    return DominoApiClient(base_url=base_url).with_headers(headers)
 
 def resolve_domino_api_host() -> str:
     """Resolve the Domino API base URL.
