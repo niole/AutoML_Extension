@@ -235,10 +235,6 @@ def pytest_html_results_table_row(report, cells):
         cells.pop()
 
 
-# ---------------------------------------------------------------------------
-# Global test auth/user context
-# ---------------------------------------------------------------------------
-
 @pytest.fixture()
 def mock_viewing_user(monkeypatch):
     """Provide a default viewing user for unit tests.
