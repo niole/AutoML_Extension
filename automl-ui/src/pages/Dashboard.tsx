@@ -14,7 +14,7 @@ import { useCapabilities } from '../hooks/useCapabilities'
 type ViewMode = 'table' | 'card'
 
 function Dashboard() {
-  const { storageCleanup } = useCapabilities()
+  const { canUserModifyStorage } = useCapabilities()
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
@@ -53,10 +53,10 @@ function Dashboard() {
   }, [search, statusFilter, typeFilter, viewMode])
 
   useEffect(() => {
-    if (!storageCleanup && storageCleanupOpen) {
+    if (!canUserModifyStorage && storageCleanupOpen) {
       setStorageCleanupOpen(false)
     }
-  }, [storageCleanup, storageCleanupOpen])
+  }, [canUserModifyStorage, storageCleanupOpen])
 
   // Prune selection to only include visible job IDs
   useEffect(() => {
@@ -131,7 +131,7 @@ function Dashboard() {
         onTypeFilterChange={setTypeFilter}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        showStorageCleanup={storageCleanup}
+        showStorageCleanup={canUserModifyStorage}
         onStorageCleanupClick={() => setStorageCleanupOpen(true)}
       />
 
@@ -209,7 +209,7 @@ function Dashboard() {
         </div>
       )}
 
-      {storageCleanup && (
+      {canUserModifyStorage && (
         <StorageCleanupDialog
           isOpen={storageCleanupOpen}
           onClose={() => setStorageCleanupOpen(false)}

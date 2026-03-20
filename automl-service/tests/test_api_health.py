@@ -135,7 +135,7 @@ async def test_capabilities_include_storage_cleanup_for_sysadmin(app_client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["storage_cleanup"] is True
+    assert body["can_user_modify_storage"] is True
 
 
 @pytest.mark.asyncio
@@ -147,4 +147,4 @@ async def test_capabilities_disable_storage_cleanup_for_non_sysadmin(app_client,
 
     assert response.status_code == 200
     body = response.json()
-    assert body["storage_cleanup"] is False
+    assert body["can_user_modify_storage"] is False

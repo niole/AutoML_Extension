@@ -66,7 +66,7 @@ async def get_capabilities():
         "mlflow_tracking": not standalone,
         "model_registry": not standalone,
         "model_deployment": not standalone,
-        "storage_cleanup": current_user_can_modify_storage(),
+        "can_user_modify_storage": current_user_can_modify_storage(),
     }
 
 
