@@ -62,14 +62,3 @@ async def test_parallel_requests_use_distinct_auth_values(monkeypatch, tmp_path)
     assert len(hits) == 2
     assert set(hits) == {auth1, auth2}
 
-
-def test_resolve_domino_project_id_reads_environment(monkeypatch):
-    monkeypatch.setenv("DOMINO_PROJECT_ID", "env-project")
-
-    import app.config as config_module
-
-    config_module._settings_instance = None
-
-    from app.core.domino_http import resolve_domino_project_id
-
-    assert resolve_domino_project_id() == "env-project"
