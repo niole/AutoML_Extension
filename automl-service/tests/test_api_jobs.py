@@ -178,7 +178,7 @@ async def test_cleanup_routes_reject_non_sysadmin(app_client, monkeypatch, metho
         response = await app_client.post(path, json=payload)
 
     assert response.status_code == 403
-    assert "modify storage" in response.json()["detail"].lower()
+    assert "sysadmin" in response.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------

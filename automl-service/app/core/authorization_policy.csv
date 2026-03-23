@@ -1,2 +1,0 @@
-p, capability:storage-admin, storage, modify
-g, role:SysAdmin, capability:storage-admin
