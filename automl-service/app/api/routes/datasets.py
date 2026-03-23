@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, UploadFile, File, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Query
 
 from app.api.error_handler import handle_errors
 
@@ -30,16 +30,15 @@ router = APIRouter()
 @router.get("", response_model=DatasetListResponse)
 @handle_errors("Failed to list datasets", detail_prefix="Failed to list datasets")
 async def list_datasets(
-    x_project_id: Optional[str] = Header(None, alias="X-Project-Id"),
+    projectId: Optional[str] = Query(None),
     dataset_manager=Depends(get_dataset_manager),
 ):
     """List available datasets.
 
-    When the ``X-Project-Id`` header is present (injected by the frontend from
-    the ``?projectId=`` URL query param), datasets are fetched from the Domino
-    API for that project.  Otherwise falls back to the local mount scan.
+    When ``projectId`` query param is present, datasets are fetched from the
+    Domino API for that project.  Otherwise falls back to the local mount scan.
     """
-    return await list_datasets_response(dataset_manager, project_id=x_project_id)
+    return await list_datasets_response(dataset_manager, project_id=projectId)
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
