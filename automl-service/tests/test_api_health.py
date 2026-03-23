@@ -122,17 +122,27 @@ async def test_capabilities_include_storage_cleanup_for_extension_editors(app_cl
     """Storage cleanup capability should follow extension edit permission."""
     from app.api.routes import health as health_routes
 
+    seen = {}
+
+    def fake_current_user_can_modify_storage(project_id=None):
+        seen["project_id"] = project_id
+        return True
+
     monkeypatch.setattr(
         health_routes,
         "current_user_can_modify_storage",
-        lambda: True,
+        fake_current_user_can_modify_storage,
         raising=True,
     )
-    response = await app_client.get("/svc/v1/health/capabilities")
+    response = await app_client.get(
+        "/svc/v1/health/capabilities",
+        headers={"X-Project-Id": "project-123"},
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["can_user_modify_storage"] is True
+    assert seen["project_id"] == "project-123"
 
 
 @pytest.mark.asyncio
@@ -140,15 +150,25 @@ async def test_capabilities_disable_storage_cleanup_without_extension_edit(app_c
     """Users without extension edit permission should not receive capability."""
     from app.api.routes import health as health_routes
 
+    seen = {}
+
+    def fake_current_user_can_modify_storage(project_id=None):
+        seen["project_id"] = project_id
+        return False
+
     monkeypatch.setattr(
         health_routes,
         "current_user_can_modify_storage",
-        lambda: False,
+        fake_current_user_can_modify_storage,
         raising=True,
     )
 
-    response = await app_client.get("/svc/v1/health/capabilities")
+    response = await app_client.get(
+        "/svc/v1/health/capabilities",
+        headers={"X-Project-Id": "project-456"},
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["can_user_modify_storage"] is False
+    assert seen["project_id"] == "project-456"

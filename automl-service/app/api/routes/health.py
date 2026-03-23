@@ -55,18 +55,19 @@ async def get_current_user(request: Request):
 
 
 @router.get("/capabilities")
-async def get_capabilities():
+async def get_capabilities(request: Request):
     """Return platform capabilities for frontend feature gating."""
     # TODO may not make sense to have in health routes
     settings = get_settings()
     standalone = settings.standalone_mode
+    project_id = request.headers.get("X-Project-Id")
     return {
         "standalone_mode": standalone,
         "domino_jobs": not standalone,
         "mlflow_tracking": not standalone,
         "model_registry": not standalone,
         "model_deployment": not standalone,
-        "can_user_modify_storage": current_user_can_modify_storage(),
+        "can_user_modify_storage": current_user_can_modify_storage(project_id=project_id),
     }
 
 

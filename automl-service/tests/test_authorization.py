@@ -42,9 +42,8 @@ def test_current_user_can_modify_storage_when_authz_allows(monkeypatch):
         lambda: fake_client,
         raising=True,
     )
-    monkeypatch.setattr(auth, "resolve_domino_project_id", lambda: "project-1", raising=True)
 
-    assert auth.current_user_can_modify_storage() is True
+    assert auth.current_user_can_modify_storage(project_id="project-1") is True
     assert fake_httpx.post_calls == [
         {
             "url": "/account/authz/permissions/authorizedactions",
@@ -74,7 +73,6 @@ def test_current_user_can_modify_storage_when_authz_denies(monkeypatch):
         lambda: fake_client,
         raising=True,
     )
-    monkeypatch.setattr(auth, "resolve_domino_project_id", lambda: "project-1", raising=True)
 
-    assert auth.current_user_can_modify_storage() is False
+    assert auth.current_user_can_modify_storage(project_id="project-1") is False
     assert len(fake_httpx.post_calls) == 1

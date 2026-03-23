@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.core.websocket_manager import get_websocket_manager
 from app.db.database import create_tables
 from app.api.routes import health, jobs, datasets, predictions, profiling, registry, export, deployments
-from app.core.context.auth import set_request_auth_header, set_request_project_id
+from app.core.context.auth import set_request_auth_header
 
 logging.basicConfig(
     level=logging.INFO,
@@ -107,18 +107,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Request context capture: store forwarded headers in request-scoped ContextVars.
+    # Request context capture: store the forwarded auth header in a request-scoped ContextVar.
     @app.middleware("http")
     async def capture_request_context(request: Request, call_next):
         auth_header = request.headers.get("authorization")
-        project_id = request.headers.get("X-Project-Id")
         set_request_auth_header(auth_header)
-        set_request_project_id(project_id)
         try:
             response = await call_next(request)
         finally:
             set_request_auth_header(None)
-            set_request_project_id(None)
         return response
 
     # Exception handlers
