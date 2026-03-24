@@ -23,6 +23,7 @@ from app.api.schemas.job import (
 from app.config import get_settings
 from app.core.authorization import require_storage_modify
 from app.core.context.user import get_viewing_user
+from app.core.authorization import require_job_list
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.db import crud
@@ -377,26 +378,12 @@ async def create_job_with_context(
     return _attach_external_links(job)
 
 
-async def list_jobs_basic(
-    db: AsyncSession,
-    skip: int = 0,
-    limit: int = 100,
-    status: Optional[str] = None,
-) -> list[Job]:
-    """List jobs with optional basic status filtering."""
-    await _sync_active_domino_jobs_for_overview(db)
-    status_filter = JobStatus(status) if status else None
-    jobs = await crud.get_jobs(db, skip=skip, limit=limit, status=status_filter)
-    return list(jobs)
-
-
 async def list_jobs_filtered(
     db: AsyncSession,
     list_request: JobListRequest,
     request: Optional[Request] = None,
 ) -> list[Job]:
     """List jobs using advanced POST filters."""
-    await _sync_active_domino_jobs_for_overview(db)
     (
         status_filter,
         model_type_filter,
@@ -404,6 +391,9 @@ async def list_jobs_filtered(
         project_id_filter,
         project_name_filter,
     ) = resolve_job_list_filters(list_request, request)
+    require_job_list(project_id_filter)
+
+    await _sync_active_domino_jobs_for_overview(db)
 
     logger.debug(
         f"[JOB LIST] Filters - owner: {owner_filter}, "
