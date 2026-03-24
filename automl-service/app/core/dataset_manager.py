@@ -164,14 +164,14 @@ class DominoDatasetManager:
             )
             return []
 
-        # v2 envelope: {"datasets": [{"dataset": {...}, "projectInfo": ...}], ...}
-        raw_items: list = result.get("datasets") or [] if isinstance(result, dict) else []
+        # v2 response is a top-level array; each item has a "datasetRwDto" wrapper
+        raw_items: list = result if isinstance(result, list) else []
 
         datasets: list[DatasetResponse] = []
         for item in raw_items:
             if not isinstance(item, dict):
                 continue
-            ds = item.get("dataset") or item
+            ds = item.get("datasetRwDto") or item
             dataset_id = str(ds.get("id") or "").strip()
             name = str(ds.get("name") or "").strip()
             if not dataset_id:
@@ -190,8 +190,8 @@ class DominoDatasetManager:
                     name=name or dataset_id,
                     path=None,
                     description=str(ds.get("description") or ""),
-                    size_bytes=0,
-                    created_at=ds.get("createdAt"),
+                    size_bytes=self._coerce_int(ds.get("sizeInBytes", 0)),
+                    created_at=ds.get("createdTime"),
                     updated_at=None,
                     file_count=len(files),
                     files=files,
@@ -208,8 +208,7 @@ class DominoDatasetManager:
         except Exception:
             logger.exception("Failed to fetch dataset detail for %s", dataset_id)
             return None
-        detail = result.get("dataset") or result
-        return str(detail.get("datasetPath") or "").strip() or None
+        return str(result.get("datasetPath") or "").strip() or None
 
     async def _list_snapshot_files(
         self,
