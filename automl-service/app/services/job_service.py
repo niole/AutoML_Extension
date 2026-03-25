@@ -1,10 +1,9 @@
 """Service helpers for job route orchestration."""
 
 import asyncio
-import os
 import logging
+import os
 from typing import Optional
-from urllib.parse import quote
 
 from app.core.utils import utc_now
 
@@ -12,8 +11,16 @@ from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.generated.domino_public_api_client.models.job_envelope_v1 import JobEnvelopeV1
+import httpx
+from app.api.generated.domino_public_api_client.models.failure_envelope_v1 import FailureEnvelopeV1
+from app.api.generated.domino_public_api_client.models.get_job_details_response_400 import GetJobDetailsResponse400
+from app.api.generated.domino_public_api_client.models.get_job_details_response_404 import GetJobDetailsResponse404
+from app.api.generated.domino_public_api_client.models.get_job_details_response_500 import GetJobDetailsResponse500
 from app.api.generated.domino_public_api_client.api.jobs import get_job_details
+from app.api.generated.domino_public_api_client.client import AuthenticatedClient, Client
+from app.api.generated.domino_public_api_client.models.git_service_provider_v1 import GitServiceProviderV1
+from app.api.generated.domino_public_api_client.models.job_envelope_v1 import JobEnvelopeV1
+
 from app.api.schemas.job import (
     JobCreateRequest,
     JobListRequest,
@@ -56,6 +63,9 @@ _DOMINO_MISSING_ERROR_MARKERS = (
     "no run",
     "archiv",
 )
+_CANONICAL_GIT_SERVICE_PROVIDER_VALUES = {
+    provider.value.lower(): provider.value for provider in GitServiceProviderV1
+}
 
 
 def _normalize_job_name(name: str) -> str:
@@ -591,18 +601,64 @@ async def find_orphans_checked(db: AsyncSession, project_id: Optional[str] = Non
     return await get_cleanup_service().find_orphans_checked(db)
 
 
-def _fetch_domino_job_or_throw(domino_job_id: str):
+def _normalize_git_service_providers(payload: object) -> object:
+    """Canonicalize Git service provider strings before generated model parsing."""
+    if isinstance(payload, list):
+        return [_normalize_git_service_providers(item) for item in payload]
+
+    if isinstance(payload, dict):
+        normalized: dict[object, object] = {}
+        for key, value in payload.items():
+            if key in {"serviceProvider", "gitServiceProvider"} and isinstance(value, str):
+                normalized[key] = _CANONICAL_GIT_SERVICE_PROVIDER_VALUES.get(
+                    value.lower(),
+                    value,
+                )
+            else:
+                normalized[key] = _normalize_git_service_providers(value)
+        return normalized
+
+    return payload
+
+
+def _parse_get_job_details_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> (
+    FailureEnvelopeV1
+    | GetJobDetailsResponse400
+    | GetJobDetailsResponse404
+    | GetJobDetailsResponse500
+    | JobEnvelopeV1
+    | None
+):
+    response_to_parse = response
+    if response.status_code == 200:
+        response_to_parse = httpx.Response(
+            status_code=response.status_code,
+            json=_normalize_git_service_providers(response.json()),
+        )
+
+    return get_job_details._parse_response(
+        client=client,
+        response=response_to_parse,
+    )
+
+
+
+def _fetch_domino_job_or_throw(domino_job_id: str) -> JobEnvelopeV1 | None:
     """Fetch a Domino job via the Public API and raise on request failure."""
     client = get_domino_public_api_client_sync()
-    # TODO can't use the public api client for getting a job because there is a
-    # bug with how enums are serialized for GitServiceProviderV1
     kwargs = get_job_details._get_kwargs(job_id=domino_job_id)
     response = client.get_httpx_client().request(
         **kwargs,
     )
+
+    job = _parse_get_job_details_response(client=client, response=response)
+
     if response.status_code > 399:
         raise HTTPException(status_code=response.status_code, message=f"Failed to get job. {response.content}")
 
+    return job
 
 async def get_job_or_404(db: AsyncSession, job_id: str, owner_user_name: str) -> Job:
     """Get job by id if user may retrieve the job"""
@@ -617,7 +673,7 @@ async def get_job_or_404(db: AsyncSession, job_id: str, owner_user_name: str) ->
     else:
         # for domino jobs, we use domino auth
         if job.domino_job_id:
-            _fetch_domino_job_or_throw(job.domino_job_id)
+            await asyncio.to_thread(_fetch_domino_job_or_throw, job.domino_job_id)
         else:
             raise HTTPException(status_code=500, detail="No domino job ID exists for domino_job, so cannot authorize")
     return job
