@@ -386,12 +386,14 @@ async def list_jobs_filtered(
         project_name_filter,
     ) = resolve_job_list_filters(list_request, request)
 
+    execution_target_filter = None
+    has_project_filter = bool(project_id_filter or project_name_filter)
+
     if project_id_filter:
         # require domino job listing auth if project_id set
         require_job_list(project_id_filter)
-        execution_target_filter = "domino_job"
-    else:
-        # disallow listing non-domino jobs
+    if not has_project_filter:
+        # Without project scope, hide Domino-backed jobs from generic listings.
         execution_target_filter = "local"
 
     await _sync_active_domino_jobs_for_overview(db)

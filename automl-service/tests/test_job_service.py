@@ -29,6 +29,7 @@ from app.services.job_service import (
     extract_metrics_leaderboard,
     get_job_or_404,
     get_queue_status,
+    list_jobs_filtered,
     normalize_job_leaderboard,
     resolve_execution_target,
     resolve_job_list_filters,
@@ -436,6 +437,87 @@ class TestResolveJobListFilters:
         lr = _make_list_request(project_id="pid-42")
         _, _, _, pid, _ = resolve_job_list_filters(lr, None)
         assert pid == "pid-42"
+
+    @pytest.mark.asyncio
+    async def test_with_project_filters_includes_all_job_types(
+        self,
+        db_session,
+        make_job,
+        mock_viewing_user,
+    ):
+        mock_viewing_user
+        local_job = make_job(name="local-job", execution_target="local")
+        domino_job = make_job(
+            name="domino-job",
+            execution_target="domino_job",
+            status=JobStatus.COMPLETED,
+            domino_job_id="run-123",
+            project_name = "test-project",
+        )
+        db_session.add_all([local_job, domino_job])
+        await db_session.commit()
+
+        jobs = await list_jobs_filtered(
+            db=db_session,
+            list_request=_make_list_request(project_name="test-project"),
+            request=None,
+        )
+
+        assert set([j.name for j in jobs]) == set(["local-job", "domino-job"])
+
+    @pytest.mark.asyncio
+    async def test_no_project_filters_excludes_domino_jobs(
+        self,
+        db_session,
+        make_job,
+        mock_viewing_user,
+    ):
+        mock_viewing_user
+        local_job = make_job(name="local-job", execution_target="local")
+        domino_job = make_job(
+            name="domino-job",
+            execution_target="domino_job",
+            status=JobStatus.COMPLETED,
+            domino_job_id="run-123",
+        )
+        db_session.add_all([local_job, domino_job])
+        await db_session.commit()
+
+        jobs = await list_jobs_filtered(db=db_session, list_request=_make_list_request(), request=None)
+
+        returned_ids = {job.id for job in jobs}
+        assert local_job.id in returned_ids
+        assert domino_job.id not in returned_ids
+        assert all(job.execution_target != "domino_job" for job in jobs)
+
+    @pytest.mark.asyncio
+    async def test_blank_project_filters_exclude_domino_jobs(
+        self,
+        db_session,
+        make_job,
+        mock_viewing_user,
+    ):
+        mock_viewing_user
+        local_job = make_job(name="blank-local-job", execution_target="local")
+        domino_job = make_job(
+            name="blank-domino-job",
+            execution_target="domino_job",
+            status=JobStatus.COMPLETED,
+            domino_job_id="run-blank-123",
+        )
+        db_session.add_all([local_job, domino_job])
+        await db_session.commit()
+
+        jobs = await list_jobs_filtered(
+            db=db_session,
+            list_request=_make_list_request(project_id="", project_name=""),
+            request=None,
+        )
+
+        returned_ids = {job.id for job in jobs}
+        assert local_job.id in returned_ids
+        assert domino_job.id not in returned_ids
+        assert all(job.execution_target != "domino_job" for job in jobs)
 
 
 # ===========================================================================
