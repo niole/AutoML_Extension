@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def is_auth_header(header_key) -> bool:
-    return re.search(r'(cookie|api|key|auth)', header_key, flag=re.I) is not None
+    return re.search(r'(cookie|api|key|auth)', header_key, flags=re.I) is not None
 
 def _is_truthy(value: Optional[str]) -> bool:
     """Parse common truthy string values from environment variables."""

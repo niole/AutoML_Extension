@@ -613,7 +613,7 @@ async def get_job_or_404(db: AsyncSession, job_id: str, owner_user_name: str) ->
     if job.execution_target == "local":
         # for local jobs, only the owner may retrieve
         if job.owner != owner_user_name:
-            raise HTTPException(status_code=403, detail="Job not found")
+            raise HTTPException(status_code=403, detail="Forbidden")
     else:
         # for domino jobs, we use domino auth
         if job.domino_job_id:
