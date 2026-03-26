@@ -14,7 +14,7 @@ function Step1DataSource() {
   const uploadMutation = useUploadFile()
   const addNotification = useStore((state) => state.addNotification)
   const [sourceType, setSourceType] = useState<'upload' | 'domino_dataset'>(
-    dataSource?.type || 'upload'
+    dataSource?.type || 'domino_dataset'
   )
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
 
@@ -105,17 +105,17 @@ function Step1DataSource() {
 
   return (
     <div className="space-y-6">
-      <div>
+      {/*<div>
         <h2 className="text-lg font-normal text-domino-text-primary mb-2">
           Select Data Source
         </h2>
         <p className="text-domino-text-secondary">
           Upload a file or select from mounted Domino datasets
         </p>
-      </div>
+      </div>*/}
 
       <div className="flex gap-4">
-        <button
+        {/*<button
           onClick={() => setSourceType('upload')}
           className={clsx(
             'flex-1 p-4 border transition-colors text-left',
@@ -129,7 +129,7 @@ function Step1DataSource() {
           <p className="text-sm text-domino-text-secondary">
             Upload a CSV or Parquet file
           </p>
-        </button>
+        </button>*/}
 
         <button
           onClick={() => setSourceType('domino_dataset')}
@@ -143,7 +143,7 @@ function Step1DataSource() {
           <CircleStackIcon className="h-6 w-6 text-domino-accent-purple mb-2" />
           <p className="font-medium text-domino-text-primary">Domino Dataset</p>
           <p className="text-sm text-domino-text-secondary">
-            Select from mounted datasets
+            Select from your Domino datasets
           </p>
         </button>
       </div>
@@ -233,9 +233,9 @@ function Step1DataSource() {
                     <p className="font-medium text-domino-text-primary truncate">
                       {dataset.name}
                     </p>
-                    <p className="text-sm text-domino-text-secondary">
+                    {/*<p className="text-sm text-domino-text-secondary">
                       {dataset.file_count} files, {formatSize(dataset.size_bytes)}
-                    </p>
+                    </p>*/}
                   </div>
                   {selectedDataset?.id === dataset.id && (
                     <CheckCircleIcon className="h-6 w-6 text-domino-accent-green flex-shrink-0" />

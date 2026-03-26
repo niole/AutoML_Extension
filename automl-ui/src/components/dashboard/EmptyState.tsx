@@ -26,7 +26,7 @@ export function EmptyState({ hasJobs }: EmptyStateProps) {
             ? 'No jobs match your current filters.'
             : 'Train models to manage and track them through a unified interface.'}
         </p>
-        <Link to="/jobs/new">
+        <Link to={`/jobs/new${window.location.search}`}>
           <button className="h-[32px] px-[15px] bg-domino-accent-purple text-white text-sm font-normal hover:bg-domino-accent-purple-hover transition-all duration-200 inline-flex items-center">
             New training job
           </button>

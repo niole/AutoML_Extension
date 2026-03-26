@@ -14,7 +14,8 @@ def register_custom_dataset_routes(app: FastAPI) -> None:
     """Register custom /svc* dataset routes."""
 
     @app.get("/svcdatasets")
-    async def svc_list_datasets(project_id: Optional[str] = None):
+    async def svc_list_datasets(projectId: Optional[str] = None):
+        project_id = projectId
         if not project_id:
             raise HTTPException(status_code=400, detail="Project ID must be provided")
 

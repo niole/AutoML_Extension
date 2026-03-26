@@ -148,7 +148,7 @@ async def list_datasets_response(
     datasets = [build_details(d) for d in response.datasets]
     total = response.metadata.total_count or len(datasets)
 
-    logger.info("Returning %s Domino datasets for project %s", len(datasets), resolved_project_id)
+    logger.info("Returning %s Domino datasets for project %s", len(datasets), project_id)
     return DatasetListResponse(datasets=datasets, total=total)
 
 
