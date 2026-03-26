@@ -7,7 +7,8 @@ interface DatasetListResponse {
 }
 
 export async function getDatasets(): Promise<DatasetListResponse> {
-  const response = await api.get<DatasetListResponse>('/datasets')
+  const allParams = window.location.search
+  const response = await api.get<DatasetListResponse>(`/datasets${allParams}`)
   return response.data
 }
 

@@ -12,6 +12,7 @@ import pandas as pd
 from fastapi import HTTPException, UploadFile
 
 from app.api.schemas.dataset import (
+    DatasetFileResponse,
     DatasetListResponse,
     DatasetPreviewResponse,
     DatasetResponse,
@@ -108,19 +109,51 @@ def filter_local_datasets(
 
 async def list_datasets_response(
     dataset_manager: DominoDatasetManager,
+    project_id: Optional[str] = None,
 ) -> DatasetListResponse:
-    """List available local datasets in API response shape."""
-    datasets = await dataset_manager.list_datasets()
-    dataset_mount_roots = get_dataset_mount_roots()
-    filtered_datasets = filter_local_datasets(datasets, local_paths=dataset_mount_roots)
-
-    logger.info(
-        "Returning %s datasets (filtered from %s) using roots %s",
-        len(filtered_datasets),
-        len(datasets),
-        ", ".join(dataset_mount_roots) if dataset_mount_roots else "(none)",
+    """List Domino datasets in API response shape."""
+    from app.core.domino_http import (
+        get_domino_public_api_client_sync,
+        resolve_domino_project_id,
     )
-    return DatasetListResponse(datasets=filtered_datasets, total=len(filtered_datasets))
+    from app.api.generated.domino_public_api_client.api.dataset_rw import get_datasets_v2
+    from app.api.generated.domino_public_api_client.models.dataset_rw_info_dto_v1 import DatasetRwInfoDtoV1
+    from app.api.generated.domino_public_api_client.models.dataset_rw_permission_v1 import DatasetRwPermissionV1
+    from app.api.generated.domino_public_api_client.types import Unset
+
+    client = get_domino_public_api_client_sync()
+    resolved_project_id = project_id or resolve_domino_project_id()
+    response = await get_datasets_v2.asyncio(
+        client=client,
+        minimum_permission=DatasetRwPermissionV1.READDATASETRWV2,
+        project_ids_to_include=[resolved_project_id],
+        include_project_info=True,
+        offset=0,
+        limit=100,
+    )
+
+    if response is None:
+        raise HTTPException(status_code=500, detail="Failed to list datasets from Domino. No response")
+
+    def build_details(d: DatasetRwInfoDtoV1) -> DatasetResponse:
+        dataset = d.dataset
+        return DatasetResponse(
+            id=dataset.id,
+            name=dataset.name,
+            path=None,
+            description=dataset.description,
+            size_bytes=0,
+            created_at=dataset.created_at,
+            updated_at=None,
+            file_count=0,
+            files=[],
+        )
+
+    datasets = [build_details(d) for d in response.datasets]
+    total = response.metadata.total_count or len(datasets)
+
+    logger.info("Returning %s Domino datasets for project %s", len(datasets), resolved_project_id)
+    return DatasetListResponse(datasets=datasets, total=total)
 
 
 async def get_dataset_or_404(

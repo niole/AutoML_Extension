@@ -16,12 +16,18 @@ import pandas as pd
 import pytest
 from fastapi import HTTPException
 
+from app.api.generated.domino_public_api_client.models.dataset_rw_info_dto_v1 import DatasetRwInfoDtoV1
+from app.api.generated.domino_public_api_client.models.paginated_dataset_rw_envelope_v2 import (
+    PaginatedDatasetRwEnvelopeV2,
+)
+from app.api.generated.domino_public_api_client.models.paginated_metadata_v1 import PaginatedMetadataV1
 from app.services.dataset_service import (
     DEFAULT_PREVIEW_LIMIT,
     MAX_PREVIEW_LIMIT,
     _safe_int,
     build_preview_payload,
     coerce_preview_response,
+    list_datasets_response,
     normalize_preview_pagination,
 )
 
@@ -358,3 +364,153 @@ class TestCoercePreviewResponse:
 
         result = coerce_preview_response(DualModel())
         assert result["dataset_id"] == "from-model-dump"
+
+
+# ---------------------------------------------------------------------------
+# list_datasets_response
+# ---------------------------------------------------------------------------
+
+
+class _ExplodingDatasetManager:
+    async def list_datasets(self):
+        raise AssertionError("list_datasets_response should not use mounted dataset data")
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_response_builds_from_domino_payload_only(monkeypatch):
+    dataset_info = DatasetRwInfoDtoV1.from_dict(
+        {
+            "dataset": {
+                "id": "ds-123",
+                "name": "Training Dataset",
+                "createdAt": "2024-01-02T03:04:05Z",
+                "description": "Tabular training data",
+                "snapshotIds": ["snap-1"],
+                "tags": {},
+                "updatedAt": "2024-01-03T04:05:06Z",
+                "path": "/api/datasets/training-dataset",
+                "sizeBytes": 12345,
+                "fileCount": 2,
+                "files": [
+                    {
+                        "name": "train.csv",
+                        "path": "/api/datasets/training-dataset/train.csv",
+                        "size": 12000,
+                    },
+                    {
+                        "fileName": "metadata.json",
+                        "filePath": "/api/datasets/training-dataset/metadata.json",
+                        "sizeInBytes": 345,
+                    },
+                ],
+            },
+            "projectInfo": {
+                "projectId": "project-123",
+                "projectName": "My Project",
+                "projectOwnerUsername": "owner",
+            },
+        }
+    )
+    response = PaginatedDatasetRwEnvelopeV2(
+        datasets=[dataset_info],
+        metadata=PaginatedMetadataV1(
+            notices=[],
+            request_id="req-1",
+            limit=100,
+            offset=0,
+            total_count=1,
+        ),
+    )
+
+    monkeypatch.setattr(
+        "app.core.domino_http.get_domino_public_api_client_sync",
+        lambda: object(),
+    )
+
+    async def fake_get_datasets(*, client, minimum_permission, project_ids_to_include, **kwargs):
+        assert project_ids_to_include == ["project-123"]
+        return response
+
+    monkeypatch.setattr(
+        "app.api.generated.domino_public_api_client.api.dataset_rw.get_datasets_v2.asyncio",
+        fake_get_datasets,
+    )
+
+    result = await list_datasets_response(
+        dataset_manager=_ExplodingDatasetManager(),
+        project_id="project-123",
+    )
+
+    assert result.total == 1
+    assert len(result.datasets) == 1
+
+    dataset = result.datasets[0]
+    assert dataset.id == "ds-123"
+    assert dataset.name == "Training Dataset"
+    assert dataset.description == "Tabular training data"
+    assert dataset.path == "/api/datasets/training-dataset"
+    assert dataset.size_bytes == 12345
+    assert dataset.file_count == 2
+    assert dataset.created_at.isoformat() == "2024-01-02T03:04:05+00:00"
+    assert dataset.updated_at.isoformat() == "2024-01-03T04:05:06+00:00"
+    assert [file.name for file in dataset.files] == ["train.csv", "metadata.json"]
+    assert [file.path for file in dataset.files] == [
+        "/api/datasets/training-dataset/train.csv",
+        "/api/datasets/training-dataset/metadata.json",
+    ]
+    assert [file.size for file in dataset.files] == [12000, 345]
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_response_defaults_missing_api_fields(monkeypatch):
+    dataset_info = DatasetRwInfoDtoV1.from_dict(
+        {
+            "dataset": {
+                "id": "ds-456",
+                "name": "Bare Dataset",
+                "createdAt": "2024-02-01T00:00:00Z",
+                "snapshotIds": [],
+                "tags": {},
+            }
+        }
+    )
+    response = PaginatedDatasetRwEnvelopeV2(
+        datasets=[dataset_info],
+        metadata=PaginatedMetadataV1(
+            notices=[],
+            request_id="req-2",
+            limit=100,
+            offset=0,
+        ),
+    )
+
+    monkeypatch.setattr(
+        "app.core.domino_http.get_domino_public_api_client_sync",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        "app.core.domino_http.resolve_domino_project_id",
+        lambda: "resolved-project",
+    )
+
+    async def fake_get_datasets(*, client, project_ids_to_include, **kwargs):
+        assert project_ids_to_include == ["resolved-project"]
+        return response
+
+    monkeypatch.setattr(
+        "app.api.generated.domino_public_api_client.api.dataset_rw.get_datasets_v2.asyncio",
+        fake_get_datasets,
+    )
+
+    result = await list_datasets_response(dataset_manager=_ExplodingDatasetManager())
+
+    assert result.total == 1
+    dataset = result.datasets[0]
+    assert dataset.id == "ds-456"
+    assert dataset.name == "Bare Dataset"
+    assert dataset.description is None
+    assert dataset.path is None
+    assert dataset.size_bytes == 0
+    assert dataset.file_count == 0
+    assert dataset.files == []
+    assert dataset.updated_at is None

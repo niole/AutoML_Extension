@@ -80,7 +80,7 @@ def get_domino_public_api_client_sync() -> DominoApiClient:
     """
     headers = get_user_auth_headers()
     base_url = resolve_domino_api_host()
-    return DominoApiClient(base_url=base_url).with_headers(headers)
+    return DominoApiClient(base_url=base_url, raise_on_unexpected_status=True).with_headers(headers)
 
 def resolve_domino_api_host() -> str:
     """Resolve the Domino API base URL.
