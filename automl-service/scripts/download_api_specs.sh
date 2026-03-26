@@ -2,14 +2,18 @@
 
 set -euo pipefail
 
+public_spec_fn=domino_public_spec.json
+private_spec_fn=domino_private_spec.json
+
 # args
 BASE_URL=${BASE_URL:-"https://cloud-dogfood.domino.tech"}
-OUT_PATH=${OUT_PATH:-"./app/api/domino_public_spec.json"}
+OUT_PATH=${OUT_PATH:-"./app/api"}
 # set to non-empty to activate
 IGNORE_VERSION_CHECKS=${IGNORE_VERSION_CHECKS:-}
 SUPPORTED_DOMINO_VERSION=${SUPPORTED_DOMINO_VERSION:-}
 
-URL="$BASE_URL/assets/public-api.json"
+PUBLIC_URL="$BASE_URL/assets/public-api.json"
+PRIVATE_URL="$BASE_URL/assets/swagger.json"
 VERSION_URL="$BASE_URL/version"
 
 if [[ -z "$IGNORE_VERSION_CHECKS" ]]; then
@@ -41,5 +45,5 @@ if [[ -z "$IGNORE_VERSION_CHECKS" ]]; then
   echo "Domino version OK: $REMOTE_VERSION" >&2
 fi
 
-curl $URL >> $OUT_PATH
-# openapi-python-client generate --url "$URL" --output-path "$OUT_PATH" --overwrite
+curl $PUBLIC_URL >> $OUT_PATH/$public_spec_fn
+curl $PRIVATE_URL >> $OUT_PATH/$private_spec_fn

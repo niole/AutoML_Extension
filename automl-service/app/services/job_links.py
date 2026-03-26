@@ -60,7 +60,7 @@ def _resolve_domino_ui_host() -> Optional[str]:
 
 def _resolve_project_details(project_id: str) -> ProjectV1:
     client = get_domino_public_api_client_sync()
-    response = get_project_by_id.sync(job.project_id, client=client)
+    response = get_project_by_id.sync(project_id, client=client)
     if not response:
         raise HTTPException(500, "No response from Domino when fetching project details")
 
@@ -102,7 +102,7 @@ def _build_domino_job_url(job: Job) -> Optional[str]:
     if not job.domino_job_id:
         return None
 
-    project_info = response.project
+    project_info = _resolve_project_details(job.project_id)
 
     owner = project_info.owner_username
     project_name = project_info.name
