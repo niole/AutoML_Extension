@@ -5,6 +5,7 @@ import os
 import shutil
 import uuid
 from functools import lru_cache
+from http import HTTPStatus
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -12,7 +13,7 @@ import pandas as pd
 from fastapi import HTTPException, UploadFile
 
 from app.core.domino_http import get_domino_public_api_client_sync
-from app.api.generated.domino_public_api_client.api.dataset_rw import get_datasets_v2
+from app.api.generated.domino_public_api_client.api.dataset_rw import get_dataset, get_dataset_snapshots, get_datasets_v2
 from app.api.generated.domino_public_api_client.models.dataset_rw_info_dto_v1 import DatasetRwInfoDtoV1
 from app.api.generated.domino_public_api_client.models.dataset_rw_permission_v1 import DatasetRwPermissionV1
 from app.api.generated.domino_public_api_client.types import Unset
@@ -113,11 +114,114 @@ def filter_local_datasets(
     return filtered_datasets
 
 
+def _is_unset(value: Any) -> bool:
+    return value.__class__.__name__ == "Unset"
+
+
+def _first_defined(*values: Any) -> Any:
+    for value in values:
+        if value is None or _is_unset(value):
+            continue
+        return value
+    return None
+
+
+def _coerce_optional_int(*values: Any) -> int:
+    for value in values:
+        if value is None or _is_unset(value):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _build_dataset_file_rows(dataset_id: str, dataset_name: str, rows: Sequence[Any], base_path: str = "") -> list[DatasetFileResponse]:
+    normalized_rows: list[DatasetFileResponse] = []
+    normalized_base_path = base_path.strip("/")
+
+    for row in rows:
+        name_entry = row.name
+        size_entry = row.size
+
+        file_name = name_entry.sortable_name or name_entry.file_name or name_entry.label
+
+        if not file_name:
+            logger.debug(f"Unable to resolve the file name for row {name_entry.label} in dataset {dataset_name} {dataset_id}")
+            continue
+
+        full_path = file_name if not normalized_base_path else f"{normalized_base_path}/{file_name}"
+        normalized_rows.append(
+            DatasetFileResponse(
+                name=file_name,
+                path=full_path,
+                size=size_entry.size_in_bytes,
+            )
+        )
+
+    return normalized_rows
+
+
+async def list_dataset_files_response(dataset_id: str):
+    from app.api.generated_private.domino_data_lab_api_v_4_client.api.dataset import get_snapshot_files_at_root
+    from app.api.generated_private.domino_data_lab_api_v_4_client.api.dataset_rw import get_files_in_snapshot
+    from app.api.generated_private.domino_data_lab_api_v_4_client.client import Client as DominoPrivateApiClient
+    from app.core.domino_http import get_user_auth_headers, resolve_domino_api_host
+
+    public_client = get_domino_public_api_client_sync()
+    private_client = DominoPrivateApiClient(
+        base_url=f"{resolve_domino_api_host()}/v4",
+        raise_on_unexpected_status=True,
+    ).with_headers(get_user_auth_headers())
+
+    dataset_result = await get_dataset.asyncio(dataset_id=dataset_id, client=public_client)
+    if dataset_result is None:
+        raise HTTPException(500, "Empty response when getting root snapshot files for dataset")
+
+    dataset = dataset_result.dataset
+    snapshot_ids = dataset.snapshot_ids
+
+    if len(snapshot_ids) == 0:
+        logger.debug(f"Found no snapshots for dataset {dataset_id}")
+        return DatasetListResponse(datasets=[], total=0)
+
+    root_files_result = await get_files_in_snapshot.asyncio(
+        snapshot_id=snapshot_ids[0],
+        client=private_client,
+        path=""
+    )
+
+    if root_files_result is None:
+        raise HTTPException(500, "Empty response when getting root snapshot files for dataset")
+
+    file_rows = _build_dataset_file_rows(dataset.id, dataset.name, root_files_result.rows)
+
+    dataset_response = DatasetResponse(
+        id=dataset.id,
+        name=dataset.name,
+        path=None,
+        description=_first_defined(dataset.description),
+        size_bytes=sum(file.size for file in file_rows),
+        created_at=dataset.created_at,
+        updated_at=None,
+        file_count=len(file_rows),
+        files=file_rows,
+    )
+
+    logger.debug(
+        "Returning %s files for dataset %s",
+        dataset_response.file_count,
+        dataset_id,
+    )
+    return DatasetListResponse(datasets=[dataset_response], total=1)
+
 async def list_datasets_response(
     dataset_manager: DominoDatasetManager,
     project_id: str,
 ) -> DatasetListResponse:
     """List Domino datasets in API response shape."""
+
     client = get_domino_public_api_client_sync()
     response = await get_datasets_v2.asyncio(
         client=client,

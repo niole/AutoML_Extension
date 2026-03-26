@@ -10,6 +10,7 @@ Covers:
 
 import math
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.generated.domino_public_api_client.models.dataset_rw_info_dto_v1 import DatasetRwInfoDtoV1
+from app.api.generated.domino_public_api_client.models.dataset_rw_envelope_v1 import DatasetRwEnvelopeV1
+from app.api.generated.domino_public_api_client.models.dataset_rw_details_v1 import DatasetRwDetailsV1
+from app.api.generated.domino_public_api_client.models.metadata_v1 import MetadataV1
 from app.api.generated.domino_public_api_client.models.paginated_dataset_rw_envelope_v2 import (
     PaginatedDatasetRwEnvelopeV2,
 )
@@ -27,6 +31,7 @@ from app.services.dataset_service import (
     _safe_int,
     build_preview_payload,
     coerce_preview_response,
+    list_dataset_files_response,
     list_datasets_response,
     normalize_preview_pagination,
 )
@@ -514,3 +519,155 @@ async def test_list_datasets_response_defaults_missing_api_fields(monkeypatch):
     assert dataset.file_count == 0
     assert dataset.files == []
     assert dataset.updated_at is None
+
+
+def _make_dataset_envelope(*, dataset_id: str, name: str, snapshot_ids: list[str], tags: dict[str, str], description: str | None = None):
+    dataset_payload = {
+        "id": dataset_id,
+        "name": name,
+        "createdAt": "2024-02-01T00:00:00Z",
+        "snapshotIds": snapshot_ids,
+        "tags": tags,
+    }
+    if description is not None:
+        dataset_payload["description"] = description
+
+    return DatasetRwEnvelopeV1(
+        dataset=DatasetRwDetailsV1.from_dict(dataset_payload),
+        metadata=MetadataV1.from_dict({"requestId": "req-1", "notices": []}),
+    )
+
+
+def _file_row(name: str, size: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        name=SimpleNamespace(file_name=name, sortable_name=name, label=name),
+        size=SimpleNamespace(in_bytes=size, size_in_bytes=size, label=str(size)),
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_dataset_files_response_uses_default_snapshot_listing(monkeypatch):
+    dataset_envelope = _make_dataset_envelope(
+        dataset_id="ds-1",
+        name="Example Dataset",
+        snapshot_ids=["snap-1"],
+        tags={"default": "snap-default"},
+        description="Dataset description",
+    )
+
+    monkeypatch.setattr(
+        "app.core.domino_http.get_domino_public_api_client_sync",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        "app.core.domino_http.resolve_domino_api_host",
+        lambda: "https://domino.example",
+    )
+    monkeypatch.setattr(
+        "app.core.domino_http.get_user_auth_headers",
+        lambda: {"Authorization": "Bearer token"},
+    )
+
+    async def fake_get_dataset(*, dataset_id, client):
+        assert dataset_id == "ds-1"
+        return SimpleNamespace(status_code=200, parsed=dataset_envelope)
+
+    async def fake_get_files_at_root(*, data_set_id, client):
+        assert data_set_id == "ds-1"
+        return SimpleNamespace(
+            status_code=200,
+            parsed=SimpleNamespace(rows=[_file_row("train.csv", 101), _file_row("test.csv", 202)]),
+        )
+
+    monkeypatch.setattr(
+        "app.api.generated.domino_public_api_client.api.dataset_rw.get_dataset.asyncio_detailed",
+        fake_get_dataset,
+    )
+    monkeypatch.setattr(
+        "app.api.generated_private.domino_data_lab_api_v_4_client.api.dataset.get_snapshot_files_at_root.asyncio_detailed",
+        fake_get_files_at_root,
+    )
+
+    async def unexpected_snapshot_fallback(**kwargs):
+        raise AssertionError("fallback snapshot lookup should not be used when default listing succeeds")
+
+    monkeypatch.setattr(
+        "app.api.generated_private.domino_data_lab_api_v_4_client.api.dataset_rw.get_files_in_snapshot.asyncio_detailed",
+        unexpected_snapshot_fallback,
+    )
+
+    result = await list_dataset_files_response(dataset_id="ds-1", project_id="project-1")
+
+    assert result.total == 1
+    assert len(result.datasets) == 1
+    dataset = result.datasets[0]
+    assert dataset.id == "ds-1"
+    assert dataset.name == "Example Dataset"
+    assert dataset.description == "Dataset description"
+    assert dataset.file_count == 2
+    assert dataset.size_bytes == 303
+    assert [file.name for file in dataset.files] == ["train.csv", "test.csv"]
+    assert [file.path for file in dataset.files] == ["train.csv", "test.csv"]
+    assert [file.size for file in dataset.files] == [101, 202]
+
+
+@pytest.mark.asyncio
+async def test_list_dataset_files_response_falls_back_to_first_snapshot(monkeypatch):
+    dataset_envelope = _make_dataset_envelope(
+        dataset_id="ds-2",
+        name="Fallback Dataset",
+        snapshot_ids=["snap-first", "snap-second"],
+        tags={},
+    )
+
+    monkeypatch.setattr(
+        "app.core.domino_http.get_domino_public_api_client_sync",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        "app.core.domino_http.resolve_domino_api_host",
+        lambda: "https://domino.example",
+    )
+    monkeypatch.setattr(
+        "app.core.domino_http.get_user_auth_headers",
+        lambda: {"Authorization": "Bearer token"},
+    )
+
+    async def fake_get_dataset(*, dataset_id, client):
+        assert dataset_id == "ds-2"
+        return SimpleNamespace(status_code=200, parsed=dataset_envelope)
+
+    async def fake_get_files_at_root(*, data_set_id, client):
+        return SimpleNamespace(status_code=404, parsed=SimpleNamespace(message="No default snapshot"))
+
+    async def fake_get_files_in_snapshot(*, snapshot_id, client, path):
+        assert snapshot_id == "snap-first"
+        assert path == ""
+        return SimpleNamespace(
+            status_code=200,
+            parsed=SimpleNamespace(rows=[_file_row("nested/data.parquet", 4096)]),
+        )
+
+    monkeypatch.setattr(
+        "app.api.generated.domino_public_api_client.api.dataset_rw.get_dataset.asyncio_detailed",
+        fake_get_dataset,
+    )
+    monkeypatch.setattr(
+        "app.api.generated_private.domino_data_lab_api_v_4_client.api.dataset.get_snapshot_files_at_root.asyncio_detailed",
+        fake_get_files_at_root,
+    )
+    monkeypatch.setattr(
+        "app.api.generated_private.domino_data_lab_api_v_4_client.api.dataset_rw.get_files_in_snapshot.asyncio_detailed",
+        fake_get_files_in_snapshot,
+    )
+
+    result = await list_dataset_files_response(dataset_id="ds-2", project_id="project-2")
+
+    assert result.total == 1
+    dataset = result.datasets[0]
+    assert dataset.id == "ds-2"
+    assert dataset.file_count == 1
+    assert dataset.size_bytes == 4096
+    assert dataset.files[0].name == "nested/data.parquet"
+    assert dataset.files[0].path == "nested/data.parquet"
+    assert dataset.files[0].size == 4096

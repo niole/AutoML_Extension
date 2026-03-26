@@ -5,6 +5,7 @@ from typing import Optional
 from app.services.dataset_service import (
     build_compat_dataset_preview_payload,
     get_dataset_manager,
+    list_dataset_files_response,
     list_datasets_response,
     save_uploaded_file,
 )
@@ -12,6 +13,10 @@ from app.services.dataset_service import (
 
 def register_custom_dataset_routes(app: FastAPI) -> None:
     """Register custom /svc* dataset routes."""
+
+    @app.get("/svcdataset/{dataset_id}/files")
+    async def svc_list_dataset_files(dataset_id: str):
+        return await list_dataset_files_response(dataset_id)
 
     @app.get("/svcdatasets")
     async def svc_list_datasets(projectId: Optional[str] = None):
