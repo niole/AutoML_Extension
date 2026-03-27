@@ -332,7 +332,7 @@ async def list_datasets_response(
             id=dataset.id,
             name=dataset.name,
             path=None,
-            description=_first_defined(dataset.description),
+            description=dataset.description,
             size_bytes=0,
             created_at=dataset.created_at,
             updated_at=None,
@@ -402,7 +402,6 @@ def normalize_preview_pagination(
 
 
 def build_preview_payload(
-    dataset_id: str,
     file_path: str,
     limit: int = DEFAULT_PREVIEW_LIMIT,
     offset: int = 0,
@@ -449,7 +448,7 @@ def build_preview_payload(
 
     safe_df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
     payload: dict[str, Any] = {
-        "dataset_id": dataset_id,
+        "dataset_id": file_path,
         "file_path": file_path,
         "file_name": os.path.basename(file_path),
         "columns": list(df.columns),
@@ -464,7 +463,6 @@ def build_preview_payload(
 
 
 def preview_file_response(
-    dataset_id: str,
     file_path: str,
     limit: Optional[Any] = None,
     rows: Optional[Any] = None,
@@ -517,7 +515,6 @@ async def build_compat_dataset_preview_payload(
     file_bytes = await _fetch_domino_dataset_file_bytes(dataset_id=dataset_id, file_path=file_path)
 
     return build_preview_payload(
-        dataset_id=dataset_id,
         file_path=file_path,
         limit=limit,
         offset=offset,
