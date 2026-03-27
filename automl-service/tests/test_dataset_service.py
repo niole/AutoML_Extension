@@ -36,6 +36,7 @@ from app.services.dataset_service import (
     list_datasets_response,
     normalize_preview_pagination,
 )
+from app.api.schemas.dataset import CompatDatasetPreviewRequest
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +234,7 @@ class TestBuildPreviewPayloadErrors:
         with pytest.raises(HTTPException) as exc_info:
             build_preview_payload("/nonexistent/path/data.csv")
         assert exc_info.value.status_code == 404
-        assert "File not found" in exc_info.value.detail
+        assert "file not found" in exc_info.value.detail
 
     def test_empty_file_path(self):
         with pytest.raises(HTTPException) as exc_info:
@@ -411,12 +412,12 @@ async def test_build_compat_dataset_preview_payload_fetches_dataset_file_over_ap
 
     result = await build_compat_dataset_preview_payload(
         dataset_manager=_ExplodingDatasetManager(),
-        body={
+        body=CompatDatasetPreviewRequest(**{
             "dataset_id": "ds-123",
             "file_path": "folder/train.csv",
             "limit": 25,
-            "offset": 10,
-        },
+            "offset": 0,
+        }),
     )
 
     assert calls == [
@@ -427,9 +428,9 @@ async def test_build_compat_dataset_preview_payload_fetches_dataset_file_over_ap
     assert result["dataset_id"] == "ds-123"
     assert result["file_path"] == "folder/train.csv"
     assert result["file_name"] == "train.csv"
-    assert result["columns"] == ["placeholder_column"]
-    assert result["rows"] == [{"placeholder_column": "fetched_14_bytes"}]
-    assert result["dtypes"] == {"placeholder_column": "string"}
+    assert result["columns"] == ["id", "target"]
+    assert result["rows"] == [{"id": 1, "target": 0}]
+    assert result["dtypes"] == {"id": "int64", "target": "int64"}
     assert result["total_rows"] == 1
     assert result["preview_rows"] == 1
 
