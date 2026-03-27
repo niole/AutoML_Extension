@@ -29,7 +29,7 @@ def register_custom_dataset_routes(app: FastAPI) -> None:
 
     @app.post("/svcdatasetpreview")
     async def svc_dataset_preview(
-        body: CompatDatasetPreviewRequest = Body(default_factory=CompatDatasetPreviewRequest),
+        body: CompatDatasetPreviewRequest = Body(...),
     ):
         return await build_compat_dataset_preview_payload(
             get_dataset_manager(),
