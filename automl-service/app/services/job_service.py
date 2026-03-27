@@ -35,10 +35,12 @@ from app.core.authorization import require_storage_modify
 from app.core.context.user import get_viewing_user
 from app.core.domino_http import get_domino_public_api_client_sync
 from app.core.authorization import require_job_list
+from app.core.domino_job_launcher import get_domino_job_launcher
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.db import crud
 from app.services.job_links import attach_external_links
+from app.services.project_resolver import resolve_project
 from app.workers.training_worker import register_trained_model
 
 logger = logging.getLogger(__name__)
@@ -119,8 +121,6 @@ async def get_project_context(
     header_project_id = request.headers.get("X-Project-Id") if request else None
 
     if header_project_id:
-        from app.services.project_resolver import resolve_project
-
         info = await resolve_project(header_project_id)
         if info:
             return info.id, info.name, info.owner_username
@@ -345,13 +345,37 @@ async def create_job_with_context(
         raise
 
     if job.execution_target == "domino_job":
-        from app.core.domino_job_launcher import get_domino_job_launcher
+        print("JOB REQUEST", job_request)
+        file_path = job_request.file_path
+        job_config = {}
+
+        if job_request.data_source == "domino_dataset":
+            file_name = job_request.file_path
+            dataset_name = ""
+
+            project_info = await resolve_project(project_id)
+            if project_info is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unable to fetch project data. Empty response"
+                )
+
+
+            # calculate dataset path for file
+            if project_info.is_dfs:
+                dataset_path_prefix = "/domino/datasets/local"
+            else:
+                dataset_path_prefix = "/mnt/data"
+
+            file_path = f"{dataset_path_prefix}/{dataset_name}/{file_name}"
 
         settings = get_settings()
         launcher = get_domino_job_launcher()
         launch_result = await launcher.start_training_job(
             job_id=job.id,
+            file_path=file_path,
             title=job.name,
+            job_config=job_config,
             hardware_tier_name=job_request.domino_hardware_tier_name or settings.domino_training_hardware_tier_name,
             environment_id=job_request.domino_environment_id or settings.domino_training_environment_id,
             project_id=project_id,

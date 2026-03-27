@@ -316,12 +316,21 @@ class DominoJobLauncher:
     async def start_training_job(
         self,
         job_id: str,
+        file_path: str,
         title: Optional[str] = None,
+        job_config: dict = {},
         hardware_tier_name: Optional[str] = None,
         environment_id: Optional[str] = None,
         project_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Launch a training job in Domino."""
+        """Launch a training job in Domino.
+
+        *file_path* is the resolved path to the training data file as it
+        will appear inside the Domino Job container (e.g.
+        ``/domino/datasets/local/my-dataset/train.csv``).  The path is
+        resolved at job-creation time so the worker doesn't need dataset
+        API access.
+        """
         if not self.settings.is_domino_environment:
             return {
                 "success": False,
@@ -331,7 +340,7 @@ class DominoJobLauncher:
         try:
             command = self._build_command(
                 "app.workers.domino_training_runner",
-                {"job_id": job_id},
+                {"job_id": job_id, "file_path": file_path, "job_config": json.dumps(job_config)},
             )
             response = await self._job_start(
                 command=command,
