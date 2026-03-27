@@ -51,9 +51,7 @@ function Step1DataSource() {
   const previewFilePath = dataSource?.type === 'domino_dataset' && dataSource?.filePath ? dataSource.filePath : ''
   const { data: previewData, isLoading: loadingPreview } = useDatasetPreview(
     previewFilePath,
-    10, // Only fetch 10 rows to get columns
-    undefined, // no offset
-    selectedDatasetId || undefined
+    10 // Only fetch 10 rows to get columns
   )
 
   const onDrop = useCallback(

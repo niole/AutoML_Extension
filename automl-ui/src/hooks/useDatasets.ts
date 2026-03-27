@@ -16,10 +16,10 @@ export function useDataset(datasetId: string) {
   })
 }
 
-export function useDatasetPreview(filePath: string, limit: number = 100, offset: number = 0, datasetId: string | undefined = undefined) {
+export function useDatasetPreview(filePath: string, limit: number = 100, offset: number = 0) {
   return useQuery({
     queryKey: ['datasetPreview', filePath, limit, offset],
-    queryFn: () => getDatasetPreview(filePath, limit, offset, datasetId),
+    queryFn: () => getDatasetPreview(filePath, limit, offset),
     enabled: !!filePath,
   })
 }
