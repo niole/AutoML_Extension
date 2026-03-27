@@ -38,7 +38,7 @@ function NoRouteMatch() {
 function App() {
   const basename = getBasePath()
   const redirectPath = buildAppPath('/dashboard', new URLSearchParams(window.location.search))
-  console.log('App', redirectPath);
+  console.error('App', redirectPath);
 
   return (
     <ErrorBoundary>
