@@ -774,6 +774,7 @@ class TestQueueCapacity:
             patch("app.core.job_queue.get_job_queue") as mock_queue,
             patch("app.services.job_service.get_settings") as mock_get_settings,
             patch("app.services.job_service.crud") as mock_crud,
+            patch("app.services.job_service._attach_external_links", side_effect=lambda job: job),
         ):
             mock_get_settings.return_value = self._mock_settings()
             mock_queue.return_value.get_total_tracked.return_value = 3

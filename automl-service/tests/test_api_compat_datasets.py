@@ -31,7 +31,7 @@ async def test_svcdatasetpreview_openapi_uses_typed_request_model(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_svcdatasetpreview_allows_empty_body_with_typed_model(monkeypatch):
+async def test_svcdatasetpreview_rejects_empty_body_with_typed_model(monkeypatch):
     from app.api.compat import custom_datasets as custom_datasets_module
 
     app = _build_compat_dataset_app(monkeypatch)
@@ -58,6 +58,6 @@ async def test_svcdatasetpreview_allows_empty_body_with_typed_model(monkeypatch)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/svcdatasetpreview")
 
-    assert response.status_code == 200
-    assert response.json() == {"ok": True}
-    assert captured["body"] == {"offset": 0}
+    assert response.status_code == 422
+    assert "Field required" in response.text
+    assert captured == {}

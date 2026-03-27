@@ -537,7 +537,7 @@ async def app_client(async_engine, tmp_data_dir, monkeypatch, mock_viewing_user)
     from app.main import create_app
     from app.dependencies import get_db
     from app.api.routes import health as health_routes
-    from app.core.context.user import User
+    from app.core.context import user as user_ctx
 
     app = create_app()
 
@@ -545,7 +545,11 @@ async def app_client(async_engine, tmp_data_dir, monkeypatch, mock_viewing_user)
 
     def fake_health_user():
         username = username_ctx.get() or "Anonymous"
-        return User(id="test-id", user_name=username, roles=["SysAdmin", "Practitioner"])
+        return user_ctx.User(
+            id="test-id",
+            user_name=username,
+            roles=["SysAdmin", "Practitioner"],
+        )
 
     async def fake_resolve_project(project_id):
         resolved_project_id = project_id or "test-project-id"
@@ -555,6 +559,14 @@ async def app_client(async_engine, tmp_data_dir, monkeypatch, mock_viewing_user)
             owner_username="test-owner",
         )
 
+    # Allow tests that intentionally exercise the real get_viewing_user() path
+    # to bypass Domino client construction while still patching get_current_user.sync.
+    monkeypatch.setattr(
+        user_ctx,
+        "get_domino_public_api_client_sync",
+        lambda: object(),
+        raising=True,
+    )
     monkeypatch.setattr(health_routes, "get_viewing_user", fake_health_user, raising=True)
     monkeypatch.setattr(health_routes, "resolve_project", fake_resolve_project, raising=True)
 
