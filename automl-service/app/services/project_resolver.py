@@ -1,10 +1,15 @@
-"""Resolve Domino project metadata from the V4 projects API using domino_http."""
+"""Resolve Domino project metadata using the generated Public API client."""
 
 import logging
 from dataclasses import dataclass
 from typing import Optional
+from fastapi import HTTPException
 
-from app.core.domino_http import domino_request
+from app.api.generated.domino_public_api_client.api.projects import get_project_by_id
+from app.api.generated.domino_public_api_client.models.project_envelope_v1 import (
+    ProjectEnvelopeV1,
+)
+from app.core.domino_http import get_domino_public_api_client_sync
 
 logger = logging.getLogger(__name__)
 
@@ -20,33 +25,33 @@ class ProjectInfo:
 
 
 async def resolve_project(project_id: str) -> Optional[ProjectInfo]:
-    """Resolve project name and owner from the Domino V4 projects API.
+    """Resolve project name and owner from the Domino Projects API.
 
     Returns cached ProjectInfo on success, None on any failure.
     """
     if project_id in _cache:
         return _cache[project_id]
 
-    try:
-        # Use shared domino_http helper (handles host and auth acquisition + retries)
-        resp = await domino_request("GET", f"/v4/projects/{project_id}")
-        data = resp.json() if resp.text else {}
-        name = data.get("name")
-        owner = data.get("ownerUsername") or data.get("owner", {}).get("userName")
+    client = get_domino_public_api_client_sync()
+    result = await get_project_by_id.asyncio(project_id, client=client)
 
-        if not name or not owner:
-            logger.warning(
-                "Project %s response missing name/owner: %s",
-                project_id,
-                {k: data.get(k) for k in ("name", "ownerUsername", "owner")},
-            )
-            return None
+    if not isinstance(result, ProjectEnvelopeV1):
+        logger.warning(
+            "Project %s lookup returned unexpected type: %s",
+            project_id,
+            type(result).__name__,
+        )
 
-        info = ProjectInfo(id=project_id, name=name, owner_username=owner)
-        _cache[project_id] = info
-        logger.info("Resolved project %s → %s/%s", project_id, owner, name)
-        return info
+        if result is None:
+            raise HTTPException(500, "Project response was empty")
+        else:
+            raise HTTPException(500, str(result))
 
-    except Exception as exc:
-        logger.exception("Error resolving project %s: %s", project_id, exc)
-        return None
+    project = result.project
+    name = project.name
+    owner = project.owner_username
+
+    info = ProjectInfo(id=project_id, name=name, owner_username=owner)
+    _cache[project_id] = info
+    logger.info("Resolved project %s → %s/%s", project_id, owner, name)
+    return info

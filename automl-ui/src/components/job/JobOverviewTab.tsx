@@ -4,6 +4,8 @@ import Badge from '../common/Badge'
 import type { Job, JobStatus } from '../../types/job'
 import { formatDuration } from '../../utils/formatters'
 import { getFileName } from '../../utils/path'
+import { toDominoTenantUrl } from '../../utils/dominoLinks'
+import { buildAppPath } from '../../utils/appPath'
 
 interface JobOverviewTabProps {
   job: Job | undefined
@@ -215,24 +217,5 @@ function getDatasetLink(job: Job | undefined): string | null {
   if (job.data_source) params.set('data_source', job.data_source)
   if (job.dataset_id) params.set('dataset_id', job.dataset_id)
   if (job.file_path) params.set('file_path', job.file_path)
-  const query = params.toString()
-  return query ? `/eda?${query}` : null
-}
-
-function toDominoTenantUrl(rawUrl?: string): string | null {
-  if (!rawUrl) return null
-  try {
-    const tenantUrl = new URL(window.location.origin)
-    if (tenantUrl.hostname.startsWith('apps.')) {
-      tenantUrl.hostname = tenantUrl.hostname.slice('apps.'.length)
-    }
-
-    const url = new URL(rawUrl, tenantUrl.origin)
-    url.protocol = tenantUrl.protocol
-    url.hostname = tenantUrl.hostname
-    url.port = tenantUrl.port
-    return url.toString()
-  } catch {
-    return rawUrl
-  }
+  return buildAppPath('/eda', params)
 }

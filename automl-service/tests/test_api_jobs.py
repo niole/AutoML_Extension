@@ -25,6 +25,7 @@ pytestmark = pytest.mark.domino
 # ---------------------------------------------------------------------------
 
 VALID_TABULAR_JOB = {
+    "execution_target": "local",
     "name": "test-tabular-job",
     "model_type": "tabular",
     "data_source": "upload",
@@ -47,7 +48,6 @@ def _mock_job_queue():
     })
     mock_queue.get_total_tracked = MagicMock(return_value=0)
     return mock_queue
-
 
 # ---------------------------------------------------------------------------
 # POST /svc/v1/jobs — create job
@@ -120,18 +120,120 @@ async def test_create_timeseries_job_missing_time_column(app_client):
     assert response.status_code == 400
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("get", "/svc/v1/jobs/cleanup/preview", None),
+        ("post", "/svc/v1/jobs/cleanup", {"statuses": ["failed"], "include_orphans": False}),
+        ("post", "/svc/v1/jobs/cleanup/orphans", None),
+        ("post", "/svcjobcleanuppreview", {}),
+        ("post", "/svcjobcleanup", {"statuses": ["failed"], "include_orphans": False}),
+        ("post", "/svcjoborphans", {}),
+        ("post", "/svcjobcleanuporphans", {}),
+    ],
+)
+async def test_cleanup_routes_allow_extension_editors(app_client, monkeypatch, method, path, payload):
+    """Cleanup endpoints succeed when extension edit permission is granted."""
+    from app.core import authorization
+
+    def fake_fn(project_id: str):
+        return True
+
+    monkeypatch.setattr(
+        authorization,
+        "current_user_can_modify_storage",
+        fake_fn,
+        raising=True,
+    )
+
+    if method == "get":
+        response = await app_client.get(path)
+    else:
+        response = await app_client.post(path, json=payload)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("get", "/svc/v1/jobs/cleanup/preview", None),
+        ("post", "/svc/v1/jobs/cleanup", {"statuses": ["failed"], "include_orphans": False}),
+        ("post", "/svc/v1/jobs/cleanup/orphans", None),
+        ("post", "/svcjobcleanuppreview", {}),
+        ("post", "/svcjobcleanup", {"statuses": ["failed"], "include_orphans": False}),
+        ("post", "/svcjoborphans", {}),
+        ("post", "/svcjobcleanuporphans", {}),
+    ],
+)
+async def test_cleanup_routes_reject_users_without_extension_edit(app_client, monkeypatch, method, path, payload):
+    """Cleanup endpoints reject users without extension edit permission."""
+    from app.core import authorization
+
+    def fake_fn(project_id: str):
+        return False
+
+    monkeypatch.setattr(
+        authorization,
+        "current_user_can_modify_storage",
+        fake_fn,
+        raising=True,
+    )
+
+    if method == "get":
+        response = await app_client.get(path)
+    else:
+        response = await app_client.post(path, json=payload)
+
+    assert response.status_code == 403
+    assert "edit the extension" in response.json()["detail"].lower()
+
+
 # ---------------------------------------------------------------------------
 # POST /svc/v1/jobs/list — list jobs
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_list_jobs_empty(app_client):
+async def test_list_jobs_empty(app_client, monkeypatch):
     """POST /svc/v1/jobs/list on a fresh DB returns zero jobs."""
+    from app.core import authorization as auth
+
     with patch("app.core.job_queue.get_job_queue", return_value=_mock_job_queue()):
         response = await app_client.post(
             "/svc/v1/jobs/list",
             json={"owner": "", "project_name": ""},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 0
+    assert body["jobs"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_empty_from_domino_project(app_client, monkeypatch):
+    """POST /svc/v1/jobs/list on a fresh DB returns zero jobs."""
+    from app.core import authorization as auth
+    from tests.fake_domino_client import FakeResponse, FakeHttpxClient, FakeDominoClient
+
+    fake_httpx = FakeHttpxClient(
+        post_payload={"actions": [{"id": "job.project.list_jobs-1", "result": True}]},
+    )
+    fake_client = FakeDominoClient(fake_httpx)
+    monkeypatch.setattr(
+        auth,
+        "get_domino_public_api_client_sync",
+        lambda: fake_client,
+        raising=True,
+    )
+
+    with patch("app.core.job_queue.get_job_queue", return_value=_mock_job_queue()):
+        response = await app_client.post(
+            "/svc/v1/jobs/list",
+            json={"project_id": "1"},
         )
 
     assert response.status_code == 200

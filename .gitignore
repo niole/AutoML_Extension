@@ -4,6 +4,7 @@ data/datasets/uploads/
 data/temp/
 **/**/local_data/
 automl-service/mlruns/
+/mlruns/
 **/*/mlflow.db
 
 # Database
@@ -65,3 +66,6 @@ Thumbs.db
 
 # Agent context
 AGENTS.md
+
+# Api client generation
+automl-service/app/api/downloaded_openapi_specs

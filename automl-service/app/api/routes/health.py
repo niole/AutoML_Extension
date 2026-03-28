@@ -2,17 +2,21 @@
 
 import os
 from fastapi import APIRouter, Depends, Request
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.context.user import get_viewing_user
+from app.services.project_resolver import resolve_project
 from app.config import get_settings
+from app.core.authorization import current_user_can_modify_storage
 from app.dependencies import get_db
 
 router = APIRouter()
 
 
 @router.get("/user")
-async def get_current_user(request: Request):
+async def get_current_user(projectId: Optional[str] = None):
     """Get current user and project context from Domino headers/environment.
 
     Returns:
@@ -23,10 +27,12 @@ async def get_current_user(request: Request):
 
     This information determines which jobs are shown by default in listings.
     """
+    project_id = projectId
     settings = get_settings()
 
-    # Domino injects the username in the domino-username header
-    username = request.headers.get("domino-username", "Anonymous")
+    user = get_viewing_user()
+
+    username = user.user_name
 
     # Generate initials from username
     if username and username != "Anonymous":
@@ -38,10 +44,11 @@ async def get_current_user(request: Request):
     else:
         initials = "?"
 
-    # Get project info from environment
-    project_id = settings.domino_project_id or os.environ.get("DOMINO_PROJECT_ID")
-    project_name = settings.domino_project_name or os.environ.get("DOMINO_PROJECT_NAME")
-    project_owner = settings.domino_project_owner or os.environ.get("DOMINO_PROJECT_OWNER")
+    project = await resolve_project(project_id)
+
+    project_id = project.id
+    project_name = project.name
+    project_owner = project.owner_username
 
     return {
         "username": username,
@@ -54,17 +61,19 @@ async def get_current_user(request: Request):
 
 
 @router.get("/capabilities")
-async def get_capabilities():
+async def get_capabilities(request: Request):
     """Return platform capabilities for frontend feature gating."""
     # TODO may not make sense to have in health routes
     settings = get_settings()
     standalone = settings.standalone_mode
+    project_id = request.headers.get("X-Project-Id")
     return {
         "standalone_mode": standalone,
         "domino_jobs": not standalone,
         "mlflow_tracking": not standalone,
         "model_registry": not standalone,
         "model_deployment": not standalone,
+        "can_user_modify_storage": current_user_can_modify_storage(project_id=project_id),
     }
 
 

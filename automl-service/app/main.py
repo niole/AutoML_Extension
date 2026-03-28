@@ -3,6 +3,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+import re
 from typing import Optional
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -17,11 +18,14 @@ from app.api.routes import health, jobs, datasets, predictions, profiling, regis
 from app.core.context.auth import set_request_auth_header
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.environ.get("LOG_LEVEL") or logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+
+def is_auth_header(header_key) -> bool:
+    return re.search(r'(cookie|api|key|auth)', header_key, flags=re.I) is not None
 
 def _is_truthy(value: Optional[str]) -> bool:
     """Parse common truthy string values from environment variables."""
@@ -107,16 +111,20 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Request auth capture: store Authorization header in per-request context
+    # Request context capture: store the forwarded auth header in a request-scoped ContextVar.
     @app.middleware("http")
-    async def capture_auth_header(request: Request, call_next):
+    async def capture_request_context(request: Request, call_next):
+        headers = request.headers
+        redacted_headers = [(key, "<REDACTED>") for key, val in headers.items() if is_auth_header(key)]
+        safe_headers = [(key, val) for key, val in headers.items() if not is_auth_header(key)]
+
+        logger.debug(f"Capture request metadata: {request.method} {request.url.path} {redacted_headers + safe_headers}")
+
         auth_header = request.headers.get("authorization")
-        # Set before handling; ensure cleanup/reset after response
         set_request_auth_header(auth_header)
         try:
             response = await call_next(request)
         finally:
-            # Clear after request finishes to avoid any cross-request leakage
             set_request_auth_header(None)
         return response
 

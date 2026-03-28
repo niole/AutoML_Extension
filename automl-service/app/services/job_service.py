@@ -1,8 +1,8 @@
 """Service helpers for job route orchestration."""
 
 import asyncio
-import os
 import logging
+import os
 from typing import Optional
 
 from app.core.utils import utc_now
@@ -10,6 +10,16 @@ from app.core.utils import utc_now
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+import httpx
+from app.api.generated.domino_public_api_client.models.failure_envelope_v1 import FailureEnvelopeV1
+from app.api.generated.domino_public_api_client.models.get_job_details_response_400 import GetJobDetailsResponse400
+from app.api.generated.domino_public_api_client.models.get_job_details_response_404 import GetJobDetailsResponse404
+from app.api.generated.domino_public_api_client.models.get_job_details_response_500 import GetJobDetailsResponse500
+from app.api.generated.domino_public_api_client.api.jobs import get_job_details
+from app.api.generated.domino_public_api_client.client import AuthenticatedClient, Client
+from app.api.generated.domino_public_api_client.models.git_service_provider_v1 import GitServiceProviderV1
+from app.api.generated.domino_public_api_client.models.job_envelope_v1 import JobEnvelopeV1
 
 from app.api.schemas.job import (
     JobCreateRequest,
@@ -21,7 +31,10 @@ from app.api.schemas.job import (
     RegisterModelResponse,
 )
 from app.config import get_settings
+from app.core.authorization import require_storage_modify
 from app.core.context.user import get_viewing_user
+from app.core.domino_http import get_domino_public_api_client_sync
+from app.core.authorization import require_job_list
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.db import crud
@@ -50,6 +63,9 @@ _DOMINO_MISSING_ERROR_MARKERS = (
     "no run",
     "archiv",
 )
+_CANONICAL_GIT_SERVICE_PROVIDER_VALUES = {
+    provider.value.lower(): provider.value for provider in GitServiceProviderV1
+}
 
 
 def _normalize_job_name(name: str) -> str:
@@ -74,21 +90,10 @@ def _is_job_name_unique_violation(exc: IntegrityError) -> bool:
     )
 
 
-def get_request_owner(request: Optional[Request]) -> str:
-    """Determine the requesting username.
-
-    Priority:
-    - app.core.context.user.get_viewing_user().user_name
-    - 'domino-username' request header (fallback)
-    - 'anonymous' when unavailable
-    """
+def get_viewing_user_name() -> str:
     user = get_viewing_user()
     if user and user.user_name:
         return user.user_name
-    if request is not None:
-        header_user = request.headers.get("domino-username")
-        if header_user:
-            return header_user
     return "anonymous"
 
 
@@ -200,9 +205,10 @@ def build_job_model(
     project_id: Optional[str],
     project_name: Optional[str],
     project_owner: Optional[str] = None,
+    execution_target: Optional[str] = None,
 ) -> Job:
     """Build a Job ORM model from request and resolved context."""
-    execution_target = resolve_execution_target(job_request)
+    model_execution_target = execution_target or resolve_execution_target(job_request)
 
     return Job(
         name=job_name,
@@ -228,7 +234,7 @@ def build_job_model(
         auto_register=job_request.auto_register,
         register_name=job_request.register_name,
         status=JobStatus.PENDING,
-        execution_target=execution_target,
+        execution_target=model_execution_target,
         autogluon_config=build_autogluon_config(job_request),
     )
 
@@ -257,7 +263,8 @@ async def create_job_with_context(
     request: Optional[Request] = None,
 ) -> Job:
     """Validate, create, and enqueue a job using request-derived context."""
-    owner = get_request_owner(request)
+    # TODO can user launch job in project?
+    owner = get_viewing_user_name()
     project_id, project_name, project_owner = await get_project_context(request)
 
     logger.info(
@@ -312,6 +319,7 @@ async def create_job_with_context(
         project_id=project_id,
         project_name=project_name,
         project_owner=project_owner,
+        execution_target=execution_target,
     )
     try:
         job = await crud.create_job(db, job)
@@ -376,26 +384,12 @@ async def create_job_with_context(
     return _attach_external_links(job)
 
 
-async def list_jobs_basic(
-    db: AsyncSession,
-    skip: int = 0,
-    limit: int = 100,
-    status: Optional[str] = None,
-) -> list[Job]:
-    """List jobs with optional basic status filtering."""
-    await _sync_active_domino_jobs_for_overview(db)
-    status_filter = JobStatus(status) if status else None
-    jobs = await crud.get_jobs(db, skip=skip, limit=limit, status=status_filter)
-    return list(jobs)
-
-
 async def list_jobs_filtered(
     db: AsyncSession,
     list_request: JobListRequest,
     request: Optional[Request] = None,
 ) -> list[Job]:
     """List jobs using advanced POST filters."""
-    await _sync_active_domino_jobs_for_overview(db)
     (
         status_filter,
         model_type_filter,
@@ -404,9 +398,22 @@ async def list_jobs_filtered(
         project_name_filter,
     ) = resolve_job_list_filters(list_request, request)
 
+    execution_target_filter = None
+    has_project_filter = bool(project_id_filter or project_name_filter)
+
+    if project_id_filter:
+        # require domino job listing auth if project_id set
+        require_job_list(project_id_filter)
+    if not has_project_filter:
+        # Without project scope, hide Domino-backed jobs from generic listings.
+        execution_target_filter = "local"
+
+    await _sync_active_domino_jobs_for_overview(db)
+
     logger.debug(
         f"[JOB LIST] Filters - owner: {owner_filter}, "
-        f"project_name: {project_name_filter}, status: {status_filter}"
+        f"project_name: {project_name_filter}, status: {status_filter}, "
+        f"execution_target: {execution_target_filter}"
     )
 
     jobs = await crud.get_jobs(
@@ -418,7 +425,9 @@ async def list_jobs_filtered(
         owner=owner_filter,
         project_id=project_id_filter,
         project_name=project_name_filter,
+        execution_target=execution_target_filter
     )
+
     return list(jobs)
 
 
@@ -468,7 +477,8 @@ async def get_job_logs(
     limit: int = 1000,
 ) -> list:
     """Return logs for a job after validating job existence."""
-    await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    await get_job_or_404(db, job_id, owner_user_name)
     logs = await crud.get_job_logs(db, job_id, limit=limit)
     return list(logs)
 
@@ -494,14 +504,16 @@ def resolve_job_list_filters(
     Optional[str],
     Optional[str],
 ]:
-    """Resolve list filter values for status/model/user/project semantics."""
+    """Resolve list filter values for status/model/user/project semantics.
+
+    Always resolves an owner to list the jobs for"""
     status_filter = JobStatus(list_request.status) if list_request.status else None
     model_type_filter = ModelType(list_request.model_type) if list_request.model_type else None
 
     if list_request.owner is not None:
         owner_filter = list_request.owner if list_request.owner else None
     else:
-        owner_filter = get_request_owner(request) if request else None
+        owner_filter = get_viewing_user_name()
 
     if list_request.project_name is not None:
         project_name_filter = list_request.project_name if list_request.project_name else None
@@ -537,6 +549,8 @@ async def preview_cleanup(
     project_id: Optional[str] = None,
 ) -> dict:
     """Preview what would be removed by bulk cleanup."""
+    require_storage_modify(project_id=project_id)
+
     from app.core.cleanup_service import get_cleanup_service
 
     cleanup = get_cleanup_service()
@@ -554,6 +568,8 @@ async def bulk_cleanup(
     project_id: Optional[str] = None,
 ) -> dict:
     """Delete artifacts and DB rows for jobs matching given criteria."""
+    require_storage_modify(project_id=project_id)
+
     from app.core.cleanup_service import get_cleanup_service
 
     cleanup = get_cleanup_service()
@@ -567,27 +583,101 @@ async def bulk_cleanup(
     return result
 
 
-async def delete_orphans(db: AsyncSession) -> dict:
+async def delete_orphans(db: AsyncSession, project_id: Optional[str] = None) -> dict:
     """Delete orphaned artifacts with no matching job rows."""
+    require_storage_modify(project_id=project_id)
+
     from app.core.cleanup_service import get_cleanup_service
 
     await reconcile_jobs_for_storage_cleanup(db)
     return await get_cleanup_service().delete_orphans(db)
 
 
-async def find_orphans_checked(db: AsyncSession) -> dict:
+async def find_orphans_checked(db: AsyncSession, project_id: Optional[str] = None) -> dict:
     """Preview orphaned artifacts without deleting them."""
+    require_storage_modify(project_id=project_id)
+
     from app.core.cleanup_service import get_cleanup_service
 
     await reconcile_jobs_for_storage_cleanup(db)
     return await get_cleanup_service().find_orphans_checked(db)
 
 
-async def get_job_or_404(db: AsyncSession, job_id: str) -> Job:
-    """Get job by id or raise a 404."""
+def _normalize_git_service_providers(payload: object) -> object:
+    """Canonicalize Git service provider strings before generated model parsing."""
+    if isinstance(payload, list):
+        return [_normalize_git_service_providers(item) for item in payload]
+
+    if isinstance(payload, dict):
+        normalized: dict[object, object] = {}
+        for key, value in payload.items():
+            if key in {"serviceProvider", "gitServiceProvider"} and isinstance(value, str):
+                normalized[key] = _CANONICAL_GIT_SERVICE_PROVIDER_VALUES.get(
+                    value.lower(),
+                    value,
+                )
+            else:
+                normalized[key] = _normalize_git_service_providers(value)
+        return normalized
+
+    return payload
+
+
+def _parse_get_job_details_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> (
+    FailureEnvelopeV1
+    | GetJobDetailsResponse400
+    | GetJobDetailsResponse404
+    | GetJobDetailsResponse500
+    | JobEnvelopeV1
+    | None
+):
+    response_to_parse = response
+    if response.status_code == 200:
+        response_to_parse = httpx.Response(
+            status_code=response.status_code,
+            json=_normalize_git_service_providers(response.json()),
+        )
+
+    return get_job_details._parse_response(
+        client=client,
+        response=response_to_parse,
+    )
+
+
+
+def _fetch_domino_job_or_throw(domino_job_id: str) -> JobEnvelopeV1 | None:
+    """Fetch a Domino job via the Public API and raise on request failure."""
+    client = get_domino_public_api_client_sync()
+    kwargs = get_job_details._get_kwargs(job_id=domino_job_id)
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    job = _parse_get_job_details_response(client=client, response=response)
+
+    if response.status_code > 399:
+        raise HTTPException(status_code=response.status_code, message=f"Failed to get job. {response.content}")
+
+    return job
+
+async def get_job_or_404(db: AsyncSession, job_id: str, owner_user_name: str) -> Job:
+    """Get job by id if user may retrieve the job"""
     job = await crud.get_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.execution_target == "local":
+        # for local jobs, only the owner may retrieve
+        if job.owner != owner_user_name:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    else:
+        # for domino jobs, we use domino auth
+        if job.domino_job_id:
+            await asyncio.to_thread(_fetch_domino_job_or_throw, job.domino_job_id)
+        else:
+            raise HTTPException(status_code=500, detail="No domino job ID exists for domino_job, so cannot authorize")
     return job
 
 
@@ -929,7 +1019,8 @@ def normalize_job_leaderboard(job: Job) -> Job:
 
 async def get_job_response(db: AsyncSession, job_id: str) -> Job:
     """Get job payload normalized for API response compatibility."""
-    job = await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
     job = await _sync_domino_job_state(db, job, sync_terminal_metadata=True)
     job = normalize_job_leaderboard(job)
     return _attach_external_links(job)
@@ -948,7 +1039,8 @@ def extract_metrics_leaderboard(job: Job) -> Optional[list[dict]]:
 
 async def get_job_status_response(db: AsyncSession, job_id: str) -> JobStatusResponse:
     """Build status response payload for a job."""
-    job = await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
     job = await _sync_domino_job_state(db, job, sync_terminal_metadata=True)
     return JobStatusResponse(
         id=job.id,
@@ -962,7 +1054,8 @@ async def get_job_status_response(db: AsyncSession, job_id: str) -> JobStatusRes
 
 async def get_job_metrics_response(db: AsyncSession, job_id: str) -> JobMetricsResponse:
     """Build metrics response payload for a job."""
-    job = await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
     return JobMetricsResponse(
         id=job.id,
         metrics=job.metrics,
@@ -970,9 +1063,10 @@ async def get_job_metrics_response(db: AsyncSession, job_id: str) -> JobMetricsR
     )
 
 
-async def get_job_progress_response(db: AsyncSession, job_id: str) -> JobProgressResponse:
+async def get_job_progress_response(db: AsyncSession, job_id: str)  -> JobProgressResponse:
     """Build progress response payload for a job."""
-    job = await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
     job = await _sync_domino_job_state(db, job, sync_terminal_metadata=True)
     return JobProgressResponse(
         id=job.id,
@@ -988,7 +1082,8 @@ async def get_job_progress_response(db: AsyncSession, job_id: str) -> JobProgres
 
 async def cancel_job(db: AsyncSession, job_id: str) -> dict:
     """Cancel a pending/running job and queue task."""
-    job = await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
 
     if job.status not in [JobStatus.PENDING, JobStatus.RUNNING]:
         raise HTTPException(
@@ -1039,8 +1134,9 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
 async def delete_job(db: AsyncSession, job_id: str) -> dict:
     """Delete job artifacts and DB row."""
     from app.core.cleanup_service import get_cleanup_service
-
-    job = await get_job_or_404(db, job_id)
+    # TODO needs own auth
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
     cleanup_result = await get_cleanup_service().delete_job_artifacts(job, db)
     await crud.delete_job(db, job_id)
     return {"message": "Job deleted", "job_id": job_id, "cleanup": cleanup_result}
@@ -1049,6 +1145,7 @@ async def delete_job(db: AsyncSession, job_id: str) -> dict:
 async def bulk_delete_jobs(db: AsyncSession, job_ids: list[str]) -> dict:
     """Delete multiple jobs, cancelling active ones first. Continues on per-job failure."""
     from app.core.cleanup_service import get_cleanup_service
+    # TODO needs own auth
 
     deleted_job_ids: list[str] = []
     failed: list[dict[str, str]] = []
