@@ -17,11 +17,14 @@ class JobConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # keep
     name: str
     description: Optional[str] = None
 
     owner: Optional[str] = None
+    # keep
     project_id: Optional[str] = None
+    # keep
     project_name: Optional[str] = None
     project_owner: Optional[str] = None
 
@@ -36,30 +39,47 @@ class JobConfig(BaseModel):
     current_model: Optional[str] = None
     eta_seconds: Optional[int] = None
 
+    # keep
     model_type: ModelType
+    # keep
     problem_type: Optional[ProblemType] = None
 
+    # keep
     data_source: str
+    # keep
     dataset_id: Optional[str] = None
+    # keep
     file_path: Optional[str] = None
 
+    # keep
     target_column: str
+    # keep
     time_column: Optional[str] = None
+    # keep
     id_column: Optional[str] = None
+    # keep
     prediction_length: Optional[int] = None
+    #keep
     preset: str = "medium_quality_faster_train"
+    # keep
     time_limit: Optional[int] = None
+    # keep
     eval_metric: Optional[str] = None
 
+    #keep
     autogluon_config: Optional[dict[str, Any]] = None
 
+    #keep
     metrics: Optional[dict[str, Any]] = None
     leaderboard: Optional[dict[str, Any] | list[dict[str, Any]]] = None
+    # keep
     model_path: Optional[str] = None
 
+    # keep
     experiment_name: Optional[str] = None
     experiment_run_id: Optional[str] = None
 
+    # keep
     enable_mlflow: bool = False
 
     auto_register: bool = False

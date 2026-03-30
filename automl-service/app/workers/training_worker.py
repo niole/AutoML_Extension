@@ -52,10 +52,6 @@ async def add_job_log(
             level,
         )
 
-async def get_job_status(job_id: str, db: Optional[AsyncSession] = None) -> str:
-    pass
-
-
 async def update_job_status(
     job_id: str,
     status: JobStatus,
@@ -80,16 +76,20 @@ async def update_job_progress(
     return None
 
 
-async def _get_job(
+async def _get_job_config(
     job_config: Optional[JobConfig],
     job_id: str,
     db: Optional[AsyncSession] = None,
 ):
-    """Resolve a job from the database when available, otherwise fall back locally."""
-    if db is not None:
-        return await crud.get_job(db, job_id)
-    elif job_config is not None and job_config.id == job_id:
+    """Resolve a JobConfig from the provided config or the database."""
+    if job_config is not None and job_config.id == job_id:
         return job_config
+
+    if job_config is None and db is not None:
+        job = await crud.get_job(db, job_id)
+        if job is None:
+            return None
+        return JobConfig.from_job(job)
 
     return None
 
@@ -106,8 +106,9 @@ async def _check_cancelled(
 
     # Domino jobs run outside the in-process queue, so cancellation is reflected in DB.
     if db_session is not None:
-        job = await _get_job(job_config, job_id, db_session)
-        if job and job.status == JobStatus.CANCELLED:
+        resolved_job_config = await _get_job_config(job_config, job_id, db_session)
+        # TODO use get status here
+        if resolved_job_config and resolved_job_config.status == JobStatus.CANCELLED:
             raise asyncio.CancelledError(f"Job {job_id} cancelled via database status")
 
 
@@ -224,7 +225,7 @@ async def run_training_job(
     settings = get_settings()
     tracker = None
 
-    if job_config.execution_target == "local":
+    if job_config is None or job_config.execution_target == "local":
 
         async with async_session_maker() as db:
             await run_training_job_with_db(
@@ -249,9 +250,9 @@ async def run_training_job_with_db(
 ):
 
         try:
-            job = await _get_job(job_config, job_id, db)
-            if not job:
-                logger.error(f"Job not found: {job_id}")
+            job_config = await _get_job_config(job_config, job_id, db)
+            if not job_config:
+                logger.error(f"Job config unresolved for job: {job_id}")
                 return
 
             await _check_cancelled(job_config, job_id, db)
@@ -264,23 +265,23 @@ async def run_training_job_with_db(
 
             # Initialize components
             runner = AutoGluonRunner()
-            if job.enable_mlflow and not settings.standalone_mode:
+            if job_config.enable_mlflow and not settings.standalone_mode:
                 tracker = ExperimentTracker()
             else:
-                reason = "not requested" if not job.enable_mlflow else "standalone mode"
+                reason = "not requested" if not job_config.enable_mlflow else "standalone mode"
                 await add_job_log(job_id, f"Experiment tracking disabled ({reason})", "INFO", db)
             dataset_manager = DominoDatasetManager()
 
             # Get data file path
-            logger.info(f"[TRAINING DEBUG] Job data_source: {job.data_source}")
-            logger.info(f"[TRAINING DEBUG] Job file_path: {job.file_path}")
-            logger.info(f"[TRAINING DEBUG] Job dataset_id: {job.dataset_id}")
+            logger.info(f"[TRAINING DEBUG] Job data_source: {job_config.data_source}")
+            logger.info(f"[TRAINING DEBUG] Job file_path: {job_config.file_path}")
+            logger.info(f"[TRAINING DEBUG] Job dataset_id: {job_config.dataset_id}")
 
-            if job.data_source == "domino_dataset":
-                data_path = await dataset_manager.get_dataset_file_path(job.dataset_id)
-                await add_job_log(job_id, f"Using Domino dataset: {job.dataset_id}", db)
+            if job_config.data_source == "domino_dataset":
+                data_path = await dataset_manager.get_dataset_file_path(job_config.dataset_id)
+                await add_job_log(job_id, f"Using Domino dataset: {job_config.dataset_id}", db)
             else:
-                data_path = remap_shared_path(job.file_path)
+                data_path = remap_shared_path(job_config.file_path)
                 await add_job_log(job_id, f"Using uploaded file: {data_path}", db)
 
             # TODO this log message is INFO but it claims it's DEBUG?
@@ -295,7 +296,7 @@ async def run_training_job_with_db(
                 await add_job_log(job_id, f"[DEBUG] FILE DOES NOT EXIST: {data_path}", "ERROR", db)
 
             # Set up experiment tracking (Domino uses MLflow)
-            experiment_name = job.experiment_name or f"{job.name}__{utc_now().strftime('%Y%m%d_%H%M%S')}"
+            experiment_name = job_config.experiment_name or f"{job_config.name}__{utc_now().strftime('%Y%m%d_%H%M%S')}"
             run_id = None
             if tracker:
                 tracker.create_experiment(experiment_name)
@@ -303,19 +304,19 @@ async def run_training_job_with_db(
 
                 # Start MLflow run with comprehensive tags
                 run_id = tracker.start_run(
-                    run_name=job.name,
+                    run_name=job_config.name,
                     tags={
                         "job_id": job_id,
-                        "model_type": job.model_type.value,
-                        "target_column": job.target_column or "",
-                        "preset": job.preset or "medium_quality",
+                        "model_type": job_config.model_type.value,
+                        "target_column": job_config.target_column or "",
+                        "preset": job_config.preset or "medium_quality",
                         "framework": "autogluon",
                         "created_by": "automl-service",
                         "domino_run": os.environ.get("DOMINO_RUN_ID", ""),
-                        "domino_project": job.project_name or os.environ.get("DOMINO_PROJECT_NAME", ""),
+                        "domino_project": job_config.project_name or os.environ.get("DOMINO_PROJECT_NAME", ""),
                     },
-                    project_id=job.project_id,
-                    project_name=job.project_name,
+                    project_id=job_config.project_id,
+                    project_name=job_config.project_name,
                 )
 
             # Create progress reporter
@@ -324,35 +325,35 @@ async def run_training_job_with_db(
             await add_job_log(job_id, "Starting AutoGluon training...", db)
             await progress_reporter.on_progress_update(5, "Initializing AutoGluon")
 
-            # Parse advanced config from job.autogluon_config
+            # Parse advanced config from job_config.autogluon_config
             adv_config = None
             if advanced_config:
                 adv_config = parse_advanced_config(advanced_config)
-            elif job.autogluon_config:
+            elif job_config.autogluon_config:
                 # Config is stored as {"advanced": {...}, "timeseries": {...}}
-                if "advanced" in job.autogluon_config:
-                    adv_config = parse_advanced_config(job.autogluon_config["advanced"])
+                if "advanced" in job_config.autogluon_config:
+                    adv_config = parse_advanced_config(job_config.autogluon_config["advanced"])
                     logger.info(f"[TRAINING] Parsed advanced config: {adv_config}")
                 else:
                     # Legacy format - try direct parsing
-                    adv_config = parse_advanced_config(job.autogluon_config)
+                    adv_config = parse_advanced_config(job_config.autogluon_config)
                     logger.info(f"[TRAINING] Parsed legacy config: {adv_config}")
 
             # Log all training parameters to MLflow
             training_params = {
-                "model_type": job.model_type.value,
-                "target_column": job.target_column,
-                "preset": job.preset,
-                "time_limit": job.time_limit,
-                "eval_metric": job.eval_metric,
-                "problem_type": job.problem_type.value if job.problem_type else "auto",
+                "model_type": job_config.model_type.value,
+                "target_column": job_config.target_column,
+                "preset": job_config.preset,
+                "time_limit": job_config.time_limit,
+                "eval_metric": job_config.eval_metric,
+                "problem_type": job_config.problem_type.value if job_config.problem_type else "auto",
             }
 
-            if job.model_type.value == "timeseries":
+            if job_config.model_type.value == "timeseries":
                 training_params.update({
-                    "time_column": job.time_column,
-                    "id_column": job.id_column,
-                    "prediction_length": job.prediction_length,
+                    "time_column": job_config.time_column,
+                    "id_column": job_config.id_column,
+                    "prediction_length": job_config.prediction_length,
                 })
 
             if adv_config:
@@ -373,24 +374,24 @@ async def run_training_job_with_db(
 
             # Parse timeseries config
             timeseries_config = None
-            if job.autogluon_config:
-                if "timeseries" in job.autogluon_config:
-                    timeseries_config = job.autogluon_config["timeseries"]
+            if job_config.autogluon_config:
+                if "timeseries" in job_config.autogluon_config:
+                    timeseries_config = job_config.autogluon_config["timeseries"]
                     logger.info(f"[TRAINING] Parsed timeseries config: {timeseries_config}")
 
             # Run training with advanced config
             result = await runner.run_training(
                 job_id=job_id,
-                model_type=job.model_type,
+                model_type=job_config.model_type,
                 data_path=data_path,
-                target_column=job.target_column,
-                time_column=job.time_column,
-                id_column=job.id_column,
-                prediction_length=job.prediction_length,
-                problem_type=job.problem_type,
-                preset=job.preset,
-                time_limit=job.time_limit,
-                eval_metric=job.eval_metric,
+                target_column=job_config.target_column,
+                time_column=job_config.time_column,
+                id_column=job_config.id_column,
+                prediction_length=job_config.prediction_length,
+                problem_type=job_config.problem_type,
+                preset=job_config.preset,
+                time_limit=job_config.time_limit,
+                eval_metric=job_config.eval_metric,
                 advanced_config=adv_config,
                 timeseries_config=timeseries_config,
             )
@@ -422,7 +423,7 @@ async def run_training_job_with_db(
                 diagnostics = get_model_diagnostics()
                 fi_result = diagnostics.get_feature_importance(
                     model_path=result.get("model_path"),
-                    model_type=job.model_type.value,
+                    model_type=job_config.model_type.value,
                     data_path=data_path
                 )
                 if fi_result.get("features"):
@@ -435,24 +436,24 @@ async def run_training_job_with_db(
             model_path = result.get("model_path")
             if model_path and os.path.exists(model_path):
                 try:
-                    predictor = load_predictor(model_path, job.model_type.value)
+                    predictor = load_predictor(model_path, job_config.model_type.value)
                 except Exception as e:
                     logger.warning(f"Could not load predictor for hyperparameter logging: {e}")
 
             # Log individual model runs to Domino Experiments (like notebooks do)
             # This creates separate runs for each model in the leaderboard
             # IMPORTANT: Use the DETECTED problem_type from AutoGluon (result["metrics"]["problem_type"]),
-            # NOT the user-provided job.problem_type which may be "auto".
+            # NOT the user-provided job_config.problem_type which may be "auto".
             # This ensures per-model metrics are calculated correctly for classification/regression.
             detected_problem_type = result.get("metrics", {}).get("problem_type", "auto")
-            job_config = {
+            experiment_job_config = {
                 "job_id": job_id,
-                "name": job.name,
-                "model_type": job.model_type.value,
-                "target_column": job.target_column,
-                "preset": job.preset,
-                "time_limit": job.time_limit,
-                "eval_metric": job.eval_metric,
+                "name": job_config.name,
+                "model_type": job_config.model_type.value,
+                "target_column": job_config.target_column,
+                "preset": job_config.preset,
+                "time_limit": job_config.time_limit,
+                "eval_metric": job_config.eval_metric,
                 "problem_type": detected_problem_type,  # Use detected type, not user-provided "auto"
             }
 
@@ -465,10 +466,10 @@ async def run_training_job_with_db(
             try:
                 test_data = load_dataframe(data_path)
 
-                # Add data shape info to job_config for logging
+                # Add data shape info to experiment_job_config for logging
                 if test_data is not None:
-                    job_config["n_train_samples"] = len(test_data)
-                    job_config["n_features"] = len(test_data.columns) - 1  # Exclude target
+                    experiment_job_config["n_train_samples"] = len(test_data)
+                    experiment_job_config["n_features"] = len(test_data.columns) - 1  # Exclude target
 
                 logger.info(f"Loaded test data with {len(test_data)} rows for per-model metrics")
             except Exception as e:
@@ -478,7 +479,7 @@ async def run_training_job_with_db(
                 await add_job_log(job_id, f"Logging {num_models} individual model runs to Domino Experiments", db)
 
                 run_id = tracker.log_training_results(
-                    job_config=job_config,
+                    job_config=experiment_job_config,
                     metrics=metrics_with_fi,
                     leaderboard=result.get("leaderboard", {}),
                     model_path=model_path,
@@ -528,11 +529,11 @@ async def run_training_job_with_db(
             )
 
             # Auto-register to Domino Model Registry if configured
-            if job.auto_register and model_path and not settings.standalone_mode:
-                reg_model_name = job.register_name or f"{job.name}-{job_id[:8]}"
+            if job_config.auto_register and model_path and not settings.standalone_mode:
+                reg_model_name = job_config.register_name or f"{job_config.name}-{job_id[:8]}"
                 await add_job_log(
                     job_id,
-                    f"Auto-registering model as '{reg_model_name}' in project {job.project_name or job.project_id}",
+                    f"Auto-registering model as '{reg_model_name}' in project {job_config.project_name or job_config.project_id}",
                     "INFO",
                     db,
                 )
@@ -541,13 +542,13 @@ async def run_training_job_with_db(
                     reg_result = registry.register_model(
                         model_path=model_path,
                         model_name=reg_model_name,
-                        model_type=job.model_type.value,
-                        description=f"AutoML model from job {job.name}",
+                        model_type=job_config.model_type.value,
+                        description=f"AutoML model from job {job_config.name}",
                         metrics=result.get("metrics", {}),
                         params=training_params,
                         experiment_name=experiment_name,  # Use same experiment as training
-                        project_id=job.project_id,
-                        project_name=job.project_name,
+                        project_id=job_config.project_id,
+                        project_name=job_config.project_name,
                     )
                     if reg_result.get("success"):
                         await add_job_log(
@@ -624,6 +625,8 @@ async def run_training_job_with_db(
                     pass
 
 
+# TODO this is not called from in here. Is it ever used in domino job?
+# I think this was used for the "register model within the app" funcitonality
 async def register_trained_model(
     job_id: str,
     model_name: str,
@@ -636,14 +639,14 @@ async def register_trained_model(
     This creates an entry in the Domino/MLflow model registry.
     """
     async with async_session_maker() as db:
-        job = await _get_job(None, job_id, db)
-        if not job:
-            raise ValueError(f"Job not found: {job_id}")
+        job_config = await _get_job_config(None, job_id, db)
+        if not job_config:
+            raise ValueError(f"Job config unresolved for job: {job_id}")
 
-        if job.status != JobStatus.COMPLETED:
+        if job_config.status != JobStatus.COMPLETED:
             raise ValueError(f"Job not completed: {job_id}")
 
-        if not job.model_path:
+        if not job_config.model_path:
             raise ValueError(f"Job has no model path: {job_id}")
 
         # Use Domino registry
@@ -652,28 +655,28 @@ async def register_trained_model(
         # Prepare job info for model card
         job_info = {
             "job_id": job_id,
-            "model_type": job.model_type.value if job.model_type else "tabular",
-            "problem_type": job.problem_type.value if job.problem_type else "unknown",
-            "target_column": job.target_column,
-            "preset": job.preset,
-            "time_limit": job.time_limit,
-            "dataset_id": job.dataset_id,
+            "model_type": job_config.model_type.value if job_config.model_type else "tabular",
+            "problem_type": job_config.problem_type.value if job_config.problem_type else "unknown",
+            "target_column": job_config.target_column,
+            "preset": job_config.preset,
+            "time_limit": job_config.time_limit,
+            "dataset_id": job_config.dataset_id,
         }
 
         # Get experiment name from job (set during training)
-        exp_name = job.experiment_name if hasattr(job, 'experiment_name') and job.experiment_name else None
+        exp_name = job_config.experiment_name if hasattr(job_config, 'experiment_name') and job_config.experiment_name else None
 
         result = registry.register_model(
-            model_path=job.model_path,
+            model_path=job_config.model_path,
             model_name=model_name,
-            model_type=job.model_type.value if job.model_type else "tabular",
-            description=description or f"AutoML model from job {job.name}",
+            model_type=job_config.model_type.value if job_config.model_type else "tabular",
+            description=description or f"AutoML model from job {job_config.name}",
             tags={
                 "job_id": job_id,
-                "job_name": job.name,
-                "domino_project": job.project_name or os.environ.get("DOMINO_PROJECT_NAME", ""),
+                "job_name": job_config.name,
+                "domino_project": job_config.project_name or os.environ.get("DOMINO_PROJECT_NAME", ""),
             },
-            metrics=job.metrics if hasattr(job, 'metrics') and job.metrics else {},
+            metrics=job_config.metrics if hasattr(job_config, 'metrics') and job_config.metrics else {},
             params=job_info,
             experiment_name=exp_name,  # Use same experiment as training
         )
@@ -699,11 +702,11 @@ async def register_trained_model(
                 model_name=model_name,
                 version=version,
                 job_info=job_info,
-                metrics=job.metrics if hasattr(job, 'metrics') and job.metrics else {},
+                metrics=job_config.metrics if hasattr(job_config, 'metrics') and job_config.metrics else {},
             )
             # Log model card as artifact
             tracker = ExperimentTracker()
-            if job.experiment_run_id:
+            if job_config.experiment_run_id:
                 tracker.log_text(model_card, "model_card.md")
         except Exception as e:
             logger.warning(f"Could not generate model card: {e}")
