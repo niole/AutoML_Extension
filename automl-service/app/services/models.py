@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from pydantic_core import PydanticUndefined
 
 from app.core.utils import utc_now
@@ -16,7 +16,7 @@ class JobConfig(BaseModel):
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: str
     name: str
     description: Optional[str] = None
     owner: Optional[str] = None
@@ -48,12 +48,11 @@ class JobConfig(BaseModel):
     register_name: Optional[str] = None
     registered_model_name: Optional[str] = None
     registered_model_version: Optional[str] = None
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime
 
     @classmethod
     def from_job(cls, job: Job, **overrides: Any) -> "JobConfig":
         """Create a transport-safe config from a persisted job."""
-        # TODO may not need
         payload: dict[str, Any] = {}
 
         for field_name, field_info in cls.model_fields.items():
