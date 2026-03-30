@@ -16,10 +16,11 @@ from app.api.generated.domino_public_api_client.models.failure_envelope_v1 impor
 from app.api.generated.domino_public_api_client.models.get_job_details_response_400 import GetJobDetailsResponse400
 from app.api.generated.domino_public_api_client.models.get_job_details_response_404 import GetJobDetailsResponse404
 from app.api.generated.domino_public_api_client.models.get_job_details_response_500 import GetJobDetailsResponse500
-from app.api.generated.domino_public_api_client.api.jobs import get_job_details
+from app.api.generated.domino_public_api_client.api.jobs import get_job_details, get_job_logs as get_domino_job_logs
 from app.api.generated.domino_public_api_client.client import AuthenticatedClient, Client
 from app.api.generated.domino_public_api_client.models.git_service_provider_v1 import GitServiceProviderV1
 from app.api.generated.domino_public_api_client.models.job_envelope_v1 import JobEnvelopeV1
+from app.api.generated.domino_public_api_client.models.logs_envelope_v1 import LogsEnvelopeV1
 
 from app.api.schemas.job import (
     JobCreateRequest,
@@ -37,7 +38,7 @@ from app.core.domino_http import get_domino_public_api_client_sync
 from app.core.authorization import require_job_list
 from app.core.domino_job_launcher import get_domino_job_launcher
 from app.core.dataset_mounts import resolve_dataset_mount_paths
-from app.db.models import Job, JobStatus, ModelType, ProblemType
+from app.db.models import Job, JobLog, JobStatus, ModelType, ProblemType
 from app.db import crud
 from app.services.job_links import attach_external_links
 from app.services.models import JobConfig
@@ -509,8 +510,12 @@ async def get_job_logs(
 ) -> list:
     """Return logs for a job after validating job existence."""
     owner_user_name = get_viewing_user_name()
-    await get_job_or_404(db, job_id, owner_user_name)
-    logs = await crud.get_job_logs(db, job_id, limit=limit)
+    job = await get_job_or_404(db, job_id, owner_user_name)
+    logs = []
+    if job.domino_job_id is not None:
+        logs = await _fetch_domino_job_logs(job_id=job.id, domino_job_id=job.domino_job_id, limit=limit)
+    else:
+        logs = await crud.get_job_logs(db, job_id, limit=limit)
     return list(logs)
 
 
@@ -675,6 +680,51 @@ def _parse_get_job_details_response(
         client=client,
         response=response_to_parse,
     )
+
+
+def _domino_log_level(log_type: str) -> str:
+    """Map Domino log types onto the existing API's level field."""
+    return "ERROR" if log_type == "stdErr" else "INFO"
+
+
+def _build_domino_job_logs(job_id: str, logs_envelope: LogsEnvelopeV1) -> list[JobLog]:
+    """Adapt Domino Public API log lines to the local JobLog response shape."""
+    return [
+        JobLog(
+            id=index,
+            job_id=job_id,
+            level=_domino_log_level(log_line.log_type.value),
+            message=log_line.log,
+            timestamp=log_line.timestamp,
+        )
+        for index, log_line in enumerate(logs_envelope.logs.log_content, start=1)
+    ]
+
+
+async def _fetch_domino_job_logs(*, job_id: str, domino_job_id: str, limit: int) -> list[JobLog]:
+    """Fetch Domino job logs via the Public API and adapt them to local JobLog rows."""
+    async with get_domino_public_api_client_sync() as client:
+        response = await get_domino_job_logs.asyncio_detailed(
+            job_id=domino_job_id,
+            client=client,
+            limit=limit,
+        )
+
+    if int(response.status_code) >= 400:
+        detail = response.content.decode("utf-8", errors="ignore") or "Failed to get Domino job logs"
+        raise HTTPException(status_code=int(response.status_code), detail=detail)
+
+    parsed = response.parsed
+    if not isinstance(parsed, LogsEnvelopeV1):
+        logger.warning(
+            "Unexpected Domino job logs response for job %s (%s): %s",
+            job_id,
+            domino_job_id,
+            type(parsed).__name__,
+        )
+        return []
+
+    return _build_domino_job_logs(job_id, parsed)
 
 
 

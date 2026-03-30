@@ -1,6 +1,7 @@
 """Tests for app.services.job_service helper functions."""
 
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,15 +11,22 @@ import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 
+from app.api.generated.domino_public_api_client.models.job_logs_v1 import JobLogsV1
+from app.api.generated.domino_public_api_client.models.log_content_v1 import LogContentV1
+from app.api.generated.domino_public_api_client.models.log_type_v1 import LogTypeV1
+from app.api.generated.domino_public_api_client.models.logs_envelope_v1 import LogsEnvelopeV1
+from app.api.generated.domino_public_api_client.models.logs_envelope_v1_metadata import LogsEnvelopeV1Metadata
+from app.api.generated.domino_public_api_client.models.logs_pagination_v1 import LogsPaginationV1
 from app.api.schemas.job import (
     AdvancedAutoGluonConfig,
     JobCreateRequest,
     JobListRequest,
     TimeSeriesAdvancedConfig,
 )
-from app.db.models import Job, JobStatus, ModelType, ProblemType
+from app.db.models import Job, JobLog, JobStatus, ModelType, ProblemType
 from app.services.job_service import (
     _count_active_domino_jobs,
+    _build_domino_job_logs,
     _is_domino_missing_error,
     _is_domino_terminal_status,
     _normalize_job_name,
@@ -30,6 +38,7 @@ from app.services.job_service import (
     build_job_model,
     create_job_with_context,
     extract_metrics_leaderboard,
+    get_job_logs,
     get_job_or_404,
     get_queue_status,
     list_jobs_filtered,
@@ -895,6 +904,83 @@ class TestGetJobOr404:
             await get_job_or_404(db_session, "missing-job-id", "test-user")
 
         assert exc_info.value.status_code == 404
+
+
+# ===========================================================================
+# Domino log adaptation / branching
+# ===========================================================================
+
+
+class TestDominoJobLogs:
+    """Tests for Domino-backed job log fetching."""
+
+    def test_build_domino_job_logs_adapts_to_job_log_shape(self):
+        timestamp = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
+        envelope = LogsEnvelopeV1(
+            logs=JobLogsV1(
+                is_complete=True,
+                log_content=[
+                    LogContentV1(
+                        log="training started",
+                        log_type=LogTypeV1.STDOUT,
+                        size=16,
+                        timestamp=timestamp,
+                    ),
+                    LogContentV1(
+                        log="out of memory",
+                        log_type=LogTypeV1.STDERR,
+                        size=13,
+                        timestamp=timestamp,
+                    ),
+                ],
+            ),
+            metadata=LogsEnvelopeV1Metadata(
+                notices=[],
+                pagination=LogsPaginationV1(limit=2),
+                request_id="req-123",
+            ),
+        )
+
+        logs = _build_domino_job_logs("job-123", envelope)
+
+        assert [log.id for log in logs] == [1, 2]
+        assert [log.job_id for log in logs] == ["job-123", "job-123"]
+        assert [log.level for log in logs] == ["INFO", "ERROR"]
+        assert [log.message for log in logs] == ["training started", "out of memory"]
+        assert all(log.timestamp == timestamp for log in logs)
+
+    @pytest.mark.asyncio
+    async def test_get_job_logs_uses_domino_http_when_domino_job_id_exists(self, db_session):
+        remote_logs = [
+            JobLog(
+                id=1,
+                job_id="job-123",
+                level="INFO",
+                message="remote line",
+                timestamp=datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc),
+            )
+        ]
+        job = MagicMock(id="job-123", domino_job_id="run-123")
+
+        with (
+            patch("app.services.job_service.get_viewing_user_name", return_value="test-user"),
+            patch("app.services.job_service.get_job_or_404", new_callable=AsyncMock, return_value=job),
+            patch(
+                "app.services.job_service._fetch_domino_job_logs",
+                new_callable=AsyncMock,
+                return_value=remote_logs,
+            ) as mock_fetch_domino_logs,
+            patch("app.services.job_service.crud.get_job_logs", new_callable=AsyncMock) as mock_get_db_logs,
+        ):
+            logs = await get_job_logs(db_session, "job-123", limit=25)
+
+        assert logs == remote_logs
+        mock_fetch_domino_logs.assert_awaited_once_with(
+            job_id="job-123",
+            domino_job_id="run-123",
+            limit=25,
+        )
+        mock_get_db_logs.assert_not_awaited()
 
 
 # ===========================================================================
