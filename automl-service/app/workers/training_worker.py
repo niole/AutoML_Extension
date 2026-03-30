@@ -68,6 +68,18 @@ async def update_job_status(
     return None
 
 
+async def update_job_progress(
+    job_id: str,
+    progress: int,
+    db: Optional[AsyncSession] = None,
+    **kwargs: Any,
+):
+    """Update job progress when a database session is available."""
+    if db is not None:
+        return await crud.update_job_progress(db, job_id, progress, **kwargs)
+    return None
+
+
 async def _get_job(
     job_config: Optional[JobConfig],
     job_id: str,
@@ -138,9 +150,10 @@ class TrainingProgressReporter:
         )
 
         # Update job progress with models_trained and current_model
-        await crud.update_job_progress(
-            self.db, self.job_id,
+        await update_job_progress(
+            self.job_id,
             progress=self.progress_percent,
+            db=self.db,
             current_step=f"Training {model_name}",
             models_trained=self.models_trained,
             current_model=model_name
@@ -167,9 +180,10 @@ class TrainingProgressReporter:
         )
 
         # Update job progress with new models_trained count
-        await crud.update_job_progress(
-            self.db, self.job_id,
+        await update_job_progress(
+            self.job_id,
             progress=self.progress_percent,
+            db=self.db,
             current_step=f"Completed {model_name}",
             models_trained=self.models_trained,
             current_model=model_name
@@ -178,9 +192,10 @@ class TrainingProgressReporter:
     async def on_progress_update(self, progress: int, message: str):
         """Called for general progress updates."""
         self.progress_percent = progress
-        await crud.update_job_progress(
-            self.db, self.job_id,
+        await update_job_progress(
+            self.job_id,
             progress=progress,
+            db=self.db,
             current_step=message,
             models_trained=self.models_trained,
             current_model=self.current_model
@@ -386,9 +401,10 @@ async def run_training_job_with_db(
             # Update progress with actual models trained from results
             num_models = result.get("metrics", {}).get("num_models", 0)
             best_model = result.get("metrics", {}).get("best_model", None)
-            await crud.update_job_progress(
-                db, job_id,
+            await update_job_progress(
+                job_id,
                 progress=90,
+                db=db,
                 current_step="Processing results",
                 models_trained=num_models,
                 current_model=best_model,
@@ -474,9 +490,10 @@ async def run_training_job_with_db(
             await _check_cancelled(job_config, job_id, db)
 
             # Update progress: finalizing
-            await crud.update_job_progress(
-                db, job_id,
+            await update_job_progress(
+                job_id,
                 progress=95,
+                db=db,
                 current_step="Finalizing",
                 models_trained=num_models,
                 current_model=best_model,
@@ -495,9 +512,10 @@ async def run_training_job_with_db(
             )
 
             # Final progress update: complete
-            await crud.update_job_progress(
-                db, job_id,
+            await update_job_progress(
+                job_id,
                 progress=100,
+                db=db,
                 current_step="Complete",
                 models_trained=num_models,
                 current_model=best_model,
