@@ -52,7 +52,7 @@ async def resolve_project(project_id: str) -> Optional[ProjectInfo]:
     name = project.name
     owner = project.owner_username
 
-    has_main_repository = project.main_Repository is not None
+    has_main_repository = project.main_repository is not None
 
     info = ProjectInfo(id=project_id, name=name, owner_username=owner, is_dfs=not has_main_repository)
     _cache[project_id] = info
