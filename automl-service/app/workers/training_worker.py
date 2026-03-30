@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 async def add_job_log(
     job_id: str,
     message: str,
-    level: str = "INFO",
-    db: Optional[AsyncSession] = None,
+    db: Optional[AsyncSession],
+    level: str = "info",
 ):
     """This logs the job log
 
@@ -36,13 +36,14 @@ async def add_job_log(
     and still writes to the db if run locally"""
 
     if db is None:
-        if level.lower() == "info":
+        level = level.lower()
+        if level == "info":
             logger.info(message)
-        elif level.lower() == "debug":
+        elif level == "debug":
             logger.debug(message)
-        elif level.lower() in {"warn", "warning"}:
+        elif level in {"warn", "warning"}:
             logger.warning(message)
-        elif level.lower() == "error":
+        elif level == "error":
             logger.error(message)
     else:
         await crud.add_job_log(
@@ -144,7 +145,6 @@ class TrainingProgressReporter:
         await add_job_log(
             self.job_id,
             f"Training model {model_index + 1}/{total_models}: {model_name}",
-            "INFO",
             self.db,
         )
 
@@ -174,7 +174,6 @@ class TrainingProgressReporter:
         await add_job_log(
             self.job_id,
             f"Model {model_name} completed - metrics: {json.dumps(metrics)}",
-            "INFO",
             self.db,
         )
 
@@ -249,7 +248,7 @@ async def run_training_job_with_db(
             await update_job_status(
                 job_id, JobStatus.RUNNING, db, started_at=utc_now()
             )
-            await add_job_log(job_id, "Training job started", "INFO", db)
+            await add_job_log(job_id, "Training job started", db)
 
             # Initialize components
             runner = AutoGluonRunner()
@@ -257,7 +256,7 @@ async def run_training_job_with_db(
                 tracker = ExperimentTracker()
             else:
                 reason = "not requested" if not job_config.enable_mlflow else "standalone mode"
-                await add_job_log(job_id, f"Experiment tracking disabled ({reason})", "INFO", db)
+                await add_job_log(job_id, f"Experiment tracking disabled ({reason})", db)
             dataset_manager = DominoDatasetManager()
 
             # Get data file path
@@ -274,14 +273,14 @@ async def run_training_job_with_db(
 
             # TODO this log message is INFO but it claims it's DEBUG?
             logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
-            await add_job_log(job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO", db)
+            await add_job_log(job_id, f"[DEBUG] Data path resolved to: {data_path}", db)
 
             await _check_cancelled(job_id, db)
 
             # Check if file exists
             if not os.path.exists(data_path):
                 logger.error(f"[TRAINING DEBUG] FILE NOT FOUND: {data_path}")
-                await add_job_log(job_id, f"[DEBUG] FILE DOES NOT EXIST: {data_path}", "ERROR", db)
+                await add_job_log(job_id, f"[DEBUG] FILE DOES NOT EXIST: {data_path}", db, "ERROR")
 
             # Set up experiment tracking (Domino uses MLflow)
             experiment_name = job_config.experiment_name or f"{job_config.name}__{utc_now().strftime('%Y%m%d_%H%M%S')}"
@@ -522,7 +521,6 @@ async def run_training_job_with_db(
                 await add_job_log(
                     job_id,
                     f"Auto-registering model as '{reg_model_name}' in project {job_config.project_name or job_config.project_id}",
-                    "INFO",
                     db,
                 )
                 try:
@@ -542,23 +540,22 @@ async def run_training_job_with_db(
                         await add_job_log(
                             job_id,
                             f"Model registered: {reg_result.get('model_name')} v{reg_result.get('model_version')}",
-                            "INFO",
                             db,
                         )
                     else:
                         await add_job_log(
                             job_id,
                             f"Model registration returned failure: {reg_result.get('error', 'unknown')}",
-                            "WARNING",
                             db,
+                            "WARNING",
                         )
                 except Exception as e:
                     logger.warning(f"Auto-registration failed: {e}")
                     await add_job_log(
                         job_id,
                         f"Auto-registration failed: {e}",
-                        "ERROR",
                         db,
+                        "ERROR",
                     )
 
             await add_job_log(
@@ -584,7 +581,7 @@ async def run_training_job_with_db(
                 db,
                 completed_at=utc_now(),
             )
-            await add_job_log(job_id, "Training cancelled", "WARNING", db)
+            await add_job_log(job_id, "Training cancelled", db, "WARNING")
             if tracker:
                 try:
                     tracker.end_run(status="KILLED")
@@ -603,7 +600,7 @@ async def run_training_job_with_db(
                 error_message=str(e),
                 completed_at=utc_now(),
             )
-            await add_job_log(job_id, f"Training failed: {str(e)}", "ERROR", db)
+            await add_job_log(job_id, f"Training failed: {str(e)}", db, "ERROR")
 
             # End MLflow run with failure status
             if tracker:

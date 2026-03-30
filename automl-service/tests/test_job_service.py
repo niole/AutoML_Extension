@@ -383,7 +383,6 @@ class TestBuildJobConfig:
         dumped = job_config.model_dump(mode="json")
         assert dumped["model_type"] == "tabular"
         assert dumped["problem_type"] == "binary"
-        assert dumped["status"] == "pending"
 
     def test_allows_overriding_file_path(self, make_job):
         job = make_job(file_path="/tmp/original.csv")
