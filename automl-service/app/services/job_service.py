@@ -21,6 +21,7 @@ from app.api.generated.domino_public_api_client.client import AuthenticatedClien
 from app.api.generated.domino_public_api_client.models.git_service_provider_v1 import GitServiceProviderV1
 from app.api.generated.domino_public_api_client.models.job_envelope_v1 import JobEnvelopeV1
 from app.api.generated.domino_public_api_client.models.logs_envelope_v1 import LogsEnvelopeV1
+from app.api.generated.domino_public_api_client.models.log_type_v1 import LogTypeV1
 
 from app.api.schemas.job import (
     JobCreateRequest,
@@ -684,7 +685,7 @@ def _parse_get_job_details_response(
 
 def _domino_log_level(log_type: str) -> str:
     """Map Domino log types onto the existing API's level field."""
-    return "ERROR" if log_type == "stdErr" else "INFO"
+    return "ERROR" if log_type == LogTypeV1.STDERR else "INFO"
 
 
 def _build_domino_job_logs(job_id: str, logs_envelope: LogsEnvelopeV1) -> list[JobLog]:
