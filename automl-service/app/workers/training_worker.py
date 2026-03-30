@@ -205,16 +205,6 @@ async def run_training_job(
     job_config: Optional[JobConfig] = None,
     advanced_config: Optional[Dict[str, Any]] = None,
 ):
-    # pass job state through args and then use to determine if should initialize a db
-    # TODO things needed to verify
-
-    # job state
-    # update get job
-    # is job cancelled...remove job cancellation for remote jobs
-    # job status: replace with real job status? unfotunately status is not typed
-    # get job logs? could be the support bundle maybe? is this for a feature?
-    #   there is a route for getting them, verify if the FE gets logs
-    #   could be replaced with actual jobg logs
     """
     Run a training job in the background with Domino experiment tracking.
 
