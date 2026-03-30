@@ -95,7 +95,6 @@ async def _get_job_config(
 
 
 async def _check_cancelled(
-    job_config: Optional[JobConfig],
     job_id: str,
     db_session: Optional[Any] = None,
 ) -> None:
@@ -106,9 +105,8 @@ async def _check_cancelled(
 
     # Domino jobs run outside the in-process queue, so cancellation is reflected in DB.
     if db_session is not None:
-        resolved_job_config = await _get_job_config(job_config, job_id, db_session)
-        # TODO use get status here
-        if resolved_job_config and resolved_job_config.status == JobStatus.CANCELLED:
+        job = await crud.get_job(db_session, job_id)
+        if job and job.status == JobStatus.CANCELLED:
             raise asyncio.CancelledError(f"Job {job_id} cancelled via database status")
 
 
@@ -255,7 +253,7 @@ async def run_training_job_with_db(
                 logger.error(f"Job config unresolved for job: {job_id}")
                 return
 
-            await _check_cancelled(job_config, job_id, db)
+            await _check_cancelled(job_id, db)
 
             # Update status to running
             await update_job_status(
@@ -288,7 +286,7 @@ async def run_training_job_with_db(
             logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
             await add_job_log(job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO", db)
 
-            await _check_cancelled(job_config, job_id, db)
+            await _check_cancelled(job_id, db)
 
             # Check if file exists
             if not os.path.exists(data_path):
@@ -397,7 +395,7 @@ async def run_training_job_with_db(
             )
 
             await add_job_log(job_id, "Training completed successfully", db)
-            await _check_cancelled(job_config, job_id, db)
+            await _check_cancelled(job_id, db)
 
             # Update progress with actual models trained from results
             num_models = result.get("metrics", {}).get("num_models", 0)
@@ -488,7 +486,7 @@ async def run_training_job_with_db(
                 )
 
                 await add_job_log(job_id, f"Model runs logged to MLflow experiment", db)
-            await _check_cancelled(job_config, job_id, db)
+            await _check_cancelled(job_id, db)
 
             # Update progress: finalizing
             await update_job_progress(

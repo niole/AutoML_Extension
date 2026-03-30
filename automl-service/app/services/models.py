@@ -30,6 +30,7 @@ class JobConfig(BaseModel):
 
     status: JobStatus = JobStatus.PENDING
     execution_target: str = "local"
+    # keep
     domino_job_id: Optional[str] = None
     domino_job_status: Optional[str] = None
     error_message: Optional[str] = None
@@ -82,7 +83,9 @@ class JobConfig(BaseModel):
     # keep
     enable_mlflow: bool = False
 
+    # keep
     auto_register: bool = False
+    # keep
     register_name: Optional[str] = None
 
     is_registered: bool = False
