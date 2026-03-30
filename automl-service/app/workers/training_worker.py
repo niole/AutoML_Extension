@@ -56,6 +56,18 @@ async def get_job_status(job_id: str, db: Optional[AsyncSession] = None) -> str:
     pass
 
 
+async def update_job_status(
+    job_id: str,
+    status: JobStatus,
+    db: Optional[AsyncSession] = None,
+    **kwargs: Any,
+):
+    """Update job status when a database session is available."""
+    if db is not None:
+        return await crud.update_job_status(db, job_id, status, **kwargs)
+    return None
+
+
 async def _get_job(
     job_config: Optional[JobConfig],
     job_id: str,
@@ -230,8 +242,8 @@ async def run_training_job_with_db(
             await _check_cancelled(job_config, job_id, db)
 
             # Update status to running
-            await crud.update_job_status(
-                db, job_id, JobStatus.RUNNING, started_at=utc_now()
+            await update_job_status(
+                job_id, JobStatus.RUNNING, db, started_at=utc_now()
             )
             await add_job_log(job_id, "Training job started", "INFO", db)
 
@@ -493,8 +505,8 @@ async def run_training_job_with_db(
             )
 
             # Update job status to COMPLETED
-            await crud.update_job_status(
-                db, job_id, JobStatus.COMPLETED, completed_at=utc_now()
+            await update_job_status(
+                job_id, JobStatus.COMPLETED, db, completed_at=utc_now()
             )
 
             # Auto-register to Domino Model Registry if configured
@@ -559,8 +571,10 @@ async def run_training_job_with_db(
 
         except asyncio.CancelledError:
             logger.info(f"Training job cancelled: {job_id}")
-            await crud.update_job_status(
-                db, job_id, JobStatus.CANCELLED,
+            await update_job_status(
+                job_id,
+                JobStatus.CANCELLED,
+                db,
                 completed_at=utc_now(),
             )
             await add_job_log(job_id, "Training cancelled", "WARNING", db)
@@ -575,10 +589,10 @@ async def run_training_job_with_db(
             logger.error(f"Training job failed: {job_id} - {str(e)}")
 
             # Update job status to failed
-            await crud.update_job_status(
-                db,
+            await update_job_status(
                 job_id,
                 JobStatus.FAILED,
+                db,
                 error_message=str(e),
                 completed_at=utc_now(),
             )
