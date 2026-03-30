@@ -1,5 +1,6 @@
 """Tests for app.workers.training_worker dispatch behaviour."""
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, call, patch
 
@@ -8,7 +9,7 @@ import pytest
 
 from app.services.models import JobConfig
 from app.db.models import JobStatus
-from app.workers.training_worker import run_training_job, run_training_job_with_db
+from app.workers.training_worker import add_job_log, run_training_job, run_training_job_with_db
 
 
 class TestRunTrainingJob:
@@ -179,3 +180,25 @@ class TestRunTrainingJobWithDb:
             awaited.args[1] == job_config.id and "Job completed. Best model: LightGBM" in awaited.args[2]
             for awaited in mock_add_job_log.await_args_list
         )
+
+
+class TestAddJobLog:
+    """Tests for stdout/logger emission when no DB session is available."""
+
+    @pytest.mark.asyncio
+    async def test_logs_to_worker_logger_when_db_is_none(self, caplog):
+        with (
+            caplog.at_level(logging.INFO, logger="app.workers.training_worker"),
+            patch("app.workers.training_worker.crud.add_job_log", new_callable=AsyncMock) as mock_add_job_log,
+        ):
+            await add_job_log("job-123", "Training job started", "INFO", db=None)
+            await add_job_log("job-123", "Training failed", "ERROR", db=None)
+
+        records = [
+            (record.levelname, record.message)
+            for record in caplog.records
+            if record.name == "app.workers.training_worker"
+        ]
+        assert ("INFO", "Training job started") in records
+        assert ("ERROR", "Training failed") in records
+        mock_add_job_log.assert_not_awaited()
