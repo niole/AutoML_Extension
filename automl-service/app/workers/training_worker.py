@@ -220,8 +220,6 @@ async def run_training_job(
 
     This function is called as a background task by FastAPI.
     """
-    settings = get_settings()
-    tracker = None
 
     if job_config is None or job_config.execution_target == "local":
 
@@ -246,6 +244,8 @@ async def run_training_job_with_db(
     advanced_config: Optional[Dict[str, Any]] = None,
     db: Optional[AsyncSession] = None,
 ):
+        settings = get_settings()
+        tracker = None
 
         try:
             job_config = await _get_job_config(job_config, job_id, db)
