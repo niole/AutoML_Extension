@@ -26,6 +26,7 @@ from app.services.job_service import (
     _parse_statuses_csv,
     _terminal_status_from_domino,
     build_autogluon_config,
+    build_job_config,
     build_job_model,
     create_job_with_context,
     extract_metrics_leaderboard,
@@ -38,6 +39,7 @@ from app.services.job_service import (
     validate_job_create_request,
     validate_job_name_availability,
 )
+from app.services.models import JobConfig
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +347,41 @@ class TestBuildJobModel:
         job = build_job_model(req, "job", "user", None, None)
         assert job.autogluon_config is not None
         assert "advanced" in job.autogluon_config
+
+
+class TestBuildJobConfig:
+    """Tests for JobConfig transport model construction."""
+
+    def test_builds_pydantic_model_from_job(self, make_job):
+        job = make_job(
+            name="transport-job",
+            model_type=ModelType.TABULAR,
+            problem_type=ProblemType.BINARY,
+            execution_target="domino_job",
+            dataset_id="dataset-1",
+        )
+
+        job_config = build_job_config(job)
+
+        assert isinstance(job_config, JobConfig)
+        assert job_config.id == job.id
+        assert job_config.name == "transport-job"
+        assert job_config.model_type == ModelType.TABULAR
+        assert job_config.problem_type == ProblemType.BINARY
+        assert job_config.execution_target == "domino_job"
+        assert job_config.dataset_id == "dataset-1"
+
+        dumped = job_config.model_dump(mode="json")
+        assert dumped["model_type"] == "tabular"
+        assert dumped["problem_type"] == "binary"
+        assert dumped["status"] == "pending"
+
+    def test_allows_overriding_file_path(self, make_job):
+        job = make_job(file_path="/tmp/original.csv")
+
+        job_config = build_job_config(job, file_path="/mnt/data/train.csv")
+
+        assert job_config.file_path == "/mnt/data/train.csv"
 
 
 # ===========================================================================

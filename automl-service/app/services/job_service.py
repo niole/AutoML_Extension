@@ -40,6 +40,7 @@ from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobStatus, ModelType, ProblemType
 from app.db import crud
 from app.services.job_links import attach_external_links
+from app.services.models import JobConfig
 from app.services.project_resolver import resolve_project
 from app.workers.training_worker import register_trained_model
 
@@ -255,6 +256,14 @@ def build_job_model(
     )
 
 
+def build_job_config(job: Job, *, file_path: Optional[str] = None) -> JobConfig:
+    """Build a transport-safe training config from a persisted job."""
+    overrides = {}
+    if file_path is not None:
+        overrides["file_path"] = file_path
+    return JobConfig.from_job(job, **overrides)
+
+
 async def _count_active_domino_jobs(db: AsyncSession) -> int:
     """Count in-flight Domino jobs (pending + running)."""
     jobs = await crud.get_jobs_by_statuses(
@@ -345,9 +354,7 @@ async def create_job_with_context(
         raise
 
     if job.execution_target == "domino_job":
-        print("JOB REQUEST", job_request)
         file_path = job_request.file_path
-        job_config = {}
 
         if job_request.data_source == "domino_dataset":
             file_name = job_request.file_path
@@ -368,6 +375,8 @@ async def create_job_with_context(
                 dataset_path_prefix = "/mnt/data"
 
             file_path = f"{dataset_path_prefix}/{dataset_name}/{file_name}"
+
+        job_config = build_job_config(job, file_path=file_path)
 
         settings = get_settings()
         launcher = get_domino_job_launcher()

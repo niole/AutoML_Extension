@@ -43,6 +43,26 @@ class TestTrainingRunnerArgs:
         args = parse_args()
         assert args.database_url is None
 
+    def test_job_config_and_file_path_parsed(self, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "runner",
+                "--job-id",
+                "abc123",
+                "--file-path",
+                "/mnt/data/train.csv",
+                "--job-config",
+                '{"name":"job","model_type":"tabular","data_source":"upload","target_column":"target"}',
+            ],
+        )
+        from app.workers.domino_training_runner import parse_args
+
+        args = parse_args()
+        assert args.file_path == "/mnt/data/train.csv"
+        assert args.job_config is not None
+
 
 class TestEdaRunnerArgs:
     """domino_eda_runner.parse_args accepts --database-url."""

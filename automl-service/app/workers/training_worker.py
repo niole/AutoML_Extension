@@ -19,6 +19,7 @@ from app.core.domino_registry import get_domino_registry
 from app.core.model_diagnostics import get_model_diagnostics
 from app.core.model_loader import load_predictor, load_dataframe
 from app.core.utils import remap_shared_path, utc_now
+from app.services.models import JobConfig
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,29 @@ async def add_job_log(
             level,
         )
 
+async def get_job_status(job_id: str, db: Optional[AsyncSession] = None) -> str:
+    pass
 
 
-async def _check_cancelled(job_id: str, db_session: Optional[Any] = None) -> None:
+async def _get_job(
+    job_config: Optional[JobConfig],
+    job_id: str,
+    db: Optional[AsyncSession] = None,
+):
+    """Resolve a job from the database when available, otherwise fall back locally."""
+    if db is not None:
+        return await crud.get_job(db, job_id)
+    elif job_config is not None and job_config.id == job_id:
+        return job_config
+
+    return None
+
+
+async def _check_cancelled(
+    job_config: Optional[JobConfig],
+    job_id: str,
+    db_session: Optional[Any] = None,
+) -> None:
     """Raise CancelledError if the job has been cancelled via queue or DB status."""
     from app.core.job_queue import get_job_queue
     if get_job_queue().is_job_cancelled(job_id):
@@ -61,7 +82,7 @@ async def _check_cancelled(job_id: str, db_session: Optional[Any] = None) -> Non
 
     # Domino jobs run outside the in-process queue, so cancellation is reflected in DB.
     if db_session is not None:
-        job = await crud.get_job(db_session, job_id)
+        job = await _get_job(job_config, job_id, db_session)
         if job and job.status == JobStatus.CANCELLED:
             raise asyncio.CancelledError(f"Job {job_id} cancelled via database status")
 
@@ -153,8 +174,11 @@ class TrainingProgressReporter:
             current_model=self.current_model
         )
 
-
-async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]] = None):
+async def run_training_job(
+    job_id: str,
+    job_config: Optional[JobConfig] = None,
+    advanced_config: Optional[Dict[str, Any]] = None,
+):
     # pass job state through args and then use to determine if should initialize a db
     # TODO things needed to verify
 
@@ -173,15 +197,37 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
     settings = get_settings()
     tracker = None
 
-    async with async_session_maker() as db:
+    if job_config.execution_target == "local":
+
+        async with async_session_maker() as db:
+            await run_training_job_with_db(
+                job_id,
+                job_config,
+                advanced_config,
+                db,
+            )
+
+    else:
+        await run_training_job_with_db(
+            job_id,
+            job_config,
+            advanced_config,
+        )
+
+async def run_training_job_with_db(
+    job_id: str,
+    job_config: Optional[JobConfig] = None,
+    advanced_config: Optional[Dict[str, Any]] = None,
+    db: Optional[AsyncSession] = None,
+):
+
         try:
-            # Get job from database
-            job = await crud.get_job(db, job_id)
+            job = await _get_job(job_config, job_id, db)
             if not job:
                 logger.error(f"Job not found: {job_id}")
                 return
 
-            await _check_cancelled(job_id, db)
+            await _check_cancelled(job_config, job_id, db)
 
             # Update status to running
             await crud.update_job_status(
@@ -214,7 +260,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
             await add_job_log(job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO", db)
 
-            await _check_cancelled(job_id, db)
+            await _check_cancelled(job_config, job_id, db)
 
             # Check if file exists
             if not os.path.exists(data_path):
@@ -323,7 +369,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             )
 
             await add_job_log(job_id, "Training completed successfully", db)
-            await _check_cancelled(job_id, db)
+            await _check_cancelled(job_config, job_id, db)
 
             # Update progress with actual models trained from results
             num_models = result.get("metrics", {}).get("num_models", 0)
@@ -413,7 +459,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 )
 
                 await add_job_log(job_id, f"Model runs logged to MLflow experiment", db)
-            await _check_cancelled(job_id, db)
+            await _check_cancelled(job_config, job_id, db)
 
             # Update progress: finalizing
             await crud.update_job_progress(
@@ -558,7 +604,7 @@ async def register_trained_model(
     This creates an entry in the Domino/MLflow model registry.
     """
     async with async_session_maker() as db:
-        job = await crud.get_job(db, job_id)
+        job = await _get_job(None, job_id, db)
         if not job:
             raise ValueError(f"Job not found: {job_id}")
 

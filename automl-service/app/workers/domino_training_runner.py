@@ -21,17 +21,33 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run AutoML training job from Domino")
     parser.add_argument("--job-id", required=True, help="AutoML job id")
     parser.add_argument("--database-url", required=False, help="Database url to use", default=None)
+    parser.add_argument("--file-path", required=False, default=None, help="Resolved training data path")
+    parser.add_argument(
+        "--job-config",
+        required=False,
+        default=None,
+        help="Serialized training job state",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     """CLI entrypoint."""
     args = parse_args()
+
+    if args.database_url:
+        os.environ["DATABASE_URL"] = args.database_url
+
     _ensure_project_root_on_path()
 
+    from app.services.models import JobConfig
     from app.workers.training_worker import run_training_job
 
-    asyncio.run(run_training_job(args.job_id))
+    job_config = None
+    if args.job_config:
+        job_config = JobConfig.model_validate_json(args.job_config)
+
+    asyncio.run(run_training_job(args.job_id, job_config))
 
 
 if __name__ == "__main__":
