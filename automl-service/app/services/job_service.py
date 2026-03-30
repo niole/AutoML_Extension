@@ -801,10 +801,6 @@ async def _mark_pending_job_failed_for_missing_data(
         error_message=error_message,
         completed_at=utc_now(),
     )
-    try:
-        await crud.add_job_log(db, job.id, error_message, "ERROR")
-    except Exception:
-        logger.exception("Failed to write missing-data sync log for job %s", job.id)
     return updated or job
 
 
@@ -873,15 +869,6 @@ async def _sync_domino_job_state(
                 error_message=error_message,
                 completed_at=utc_now(),
             )
-            try:
-                await crud.add_job_log(
-                    db,
-                    job.id,
-                    f"{_DOMINO_MISSING_JOB_MESSAGE} Domino API error: {error}",
-                    "WARNING",
-                )
-            except Exception:
-                logger.exception("Failed to write missing-job sync log for job %s", job.id)
             return updated or job
         return job
 
@@ -946,15 +933,6 @@ async def _sync_domino_job_state(
             error_message=error_message,
             completed_at=utc_now(),
         )
-        try:
-            await crud.add_job_log(
-                db,
-                job.id,
-                f"External Domino job ended with status: {latest_domino_status}",
-                "ERROR",
-            )
-        except Exception:
-            logger.exception("Failed to write terminal sync log for job %s", job.id)
         return updated or job
 
     updated = await crud.update_job_status(
@@ -963,15 +941,6 @@ async def _sync_domino_job_state(
         status=JobStatus.CANCELLED,
         completed_at=utc_now(),
     )
-    try:
-        await crud.add_job_log(
-            db,
-            job.id,
-            f"External Domino job ended with status: {latest_domino_status}",
-            "WARNING",
-        )
-    except Exception:
-        logger.exception("Failed to write terminal sync log for job %s", job.id)
     return updated or job
 
 

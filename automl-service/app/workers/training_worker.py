@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from typing import Any, Dict, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.database import async_session_maker
@@ -20,6 +21,36 @@ from app.core.model_loader import load_predictor, load_dataframe
 from app.core.utils import remap_shared_path, utc_now
 
 logger = logging.getLogger(__name__)
+
+
+async def add_job_log(
+    job_id: str,
+    message: str,
+    level: str = "INFO",
+    db: Optional[AsyncSession] = None,
+):
+    """This logs the job log
+
+    This logs to stdout/stderr if we are running a domino job
+    and still writes to the db if run locally"""
+
+    if db is None:
+        if level.lower() == "info":
+            logger.info(message)
+        elif level.lower() == "debug":
+            logger.debug(message)
+        elif level.lower() in {"warn", "warning"}:
+            logger.warning(message)
+        elif level.lower() == "error":
+            logger.error(message)
+    else:
+        await crud.add_job_log(
+            db,
+            job_id,
+            message,
+            level,
+        )
+
 
 
 async def _check_cancelled(job_id: str, db_session: Optional[Any] = None) -> None:
@@ -66,10 +97,11 @@ class TrainingProgressReporter:
         self.current_model = model_name
         self.progress_percent = int((model_index / max(total_models, 1)) * 100)
 
-        await crud.add_job_log(
-            self.db, self.job_id,
+        await add_job_log(
+            self.job_id,
             f"Training model {model_index + 1}/{total_models}: {model_name}",
-            "INFO"
+            "INFO",
+            self.db,
         )
 
         # Update job progress with models_trained and current_model
@@ -94,10 +126,11 @@ class TrainingProgressReporter:
         # after training completes, with each model getting its own MLflow run
         # (matching the notebook pattern)
 
-        await crud.add_job_log(
-            self.db, self.job_id,
+        await add_job_log(
+            self.job_id,
             f"Model {model_name} completed - metrics: {json.dumps(metrics)}",
-            "INFO"
+            "INFO",
+            self.db,
         )
 
         # Update job progress with new models_trained count
@@ -122,6 +155,7 @@ class TrainingProgressReporter:
 
 
 async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]] = None):
+    # pass job state through args and then use to determine if should initialize a db
     # TODO things needed to verify
 
     # job state
@@ -153,7 +187,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             await crud.update_job_status(
                 db, job_id, JobStatus.RUNNING, started_at=utc_now()
             )
-            await crud.add_job_log(db, job_id, "Training job started", "INFO")
+            await add_job_log(job_id, "Training job started", "INFO", db)
 
             # Initialize components
             runner = AutoGluonRunner()
@@ -161,7 +195,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 tracker = ExperimentTracker()
             else:
                 reason = "not requested" if not job.enable_mlflow else "standalone mode"
-                await crud.add_job_log(db, job_id, f"Experiment tracking disabled ({reason})", "INFO")
+                await add_job_log(job_id, f"Experiment tracking disabled ({reason})", "INFO", db)
             dataset_manager = DominoDatasetManager()
 
             # Get data file path
@@ -171,28 +205,28 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
 
             if job.data_source == "domino_dataset":
                 data_path = await dataset_manager.get_dataset_file_path(job.dataset_id)
-                await crud.add_job_log(db, job_id, f"Using Domino dataset: {job.dataset_id}")
+                await add_job_log(job_id, f"Using Domino dataset: {job.dataset_id}", db)
             else:
                 data_path = remap_shared_path(job.file_path)
-                await crud.add_job_log(db, job_id, f"Using uploaded file: {data_path}")
+                await add_job_log(job_id, f"Using uploaded file: {data_path}", db)
 
             # TODO this log message is INFO but it claims it's DEBUG?
             logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
-            await crud.add_job_log(db, job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO")
+            await add_job_log(job_id, f"[DEBUG] Data path resolved to: {data_path}", "INFO", db)
 
             await _check_cancelled(job_id, db)
 
             # Check if file exists
             if not os.path.exists(data_path):
                 logger.error(f"[TRAINING DEBUG] FILE NOT FOUND: {data_path}")
-                await crud.add_job_log(db, job_id, f"[DEBUG] FILE DOES NOT EXIST: {data_path}", "ERROR")
+                await add_job_log(job_id, f"[DEBUG] FILE DOES NOT EXIST: {data_path}", "ERROR", db)
 
             # Set up experiment tracking (Domino uses MLflow)
             experiment_name = job.experiment_name or f"{job.name}__{utc_now().strftime('%Y%m%d_%H%M%S')}"
             run_id = None
             if tracker:
                 tracker.create_experiment(experiment_name)
-                await crud.add_job_log(db, job_id, f"MLflow experiment: {experiment_name}")
+                await add_job_log(job_id, f"MLflow experiment: {experiment_name}", db)
 
                 # Start MLflow run with comprehensive tags
                 run_id = tracker.start_run(
@@ -214,7 +248,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             # Create progress reporter
             progress_reporter = TrainingProgressReporter(job_id, db, tracker)
 
-            await crud.add_job_log(db, job_id, "Starting AutoGluon training...")
+            await add_job_log(job_id, "Starting AutoGluon training...", db)
             await progress_reporter.on_progress_update(5, "Initializing AutoGluon")
 
             # Parse advanced config from job.autogluon_config
@@ -288,7 +322,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 timeseries_config=timeseries_config,
             )
 
-            await crud.add_job_log(db, job_id, "Training completed successfully")
+            await add_job_log(job_id, "Training completed successfully", db)
             await _check_cancelled(job_id, db)
 
             # Update progress with actual models trained from results
@@ -302,7 +336,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 current_model=best_model,
                 eta_seconds=0  # Training complete, no ETA
             )
-            await crud.add_job_log(db, job_id, f"Trained {num_models} models, best: {best_model}")
+            await add_job_log(job_id, f"Trained {num_models} models, best: {best_model}", db)
 
             # End the initial training run before logging individual models
             if tracker:
@@ -367,7 +401,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 logger.warning(f"Could not load test data for per-model metrics: {e}")
 
             if tracker:
-                await crud.add_job_log(db, job_id, f"Logging {num_models} individual model runs to Domino Experiments")
+                await add_job_log(job_id, f"Logging {num_models} individual model runs to Domino Experiments", db)
 
                 run_id = tracker.log_training_results(
                     job_config=job_config,
@@ -378,7 +412,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                     test_data=test_data,
                 )
 
-                await crud.add_job_log(db, job_id, f"Model runs logged to MLflow experiment")
+                await add_job_log(job_id, f"Model runs logged to MLflow experiment", db)
             await _check_cancelled(job_id, db)
 
             # Update progress: finalizing
@@ -420,10 +454,11 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
             # Auto-register to Domino Model Registry if configured
             if job.auto_register and model_path and not settings.standalone_mode:
                 reg_model_name = job.register_name or f"{job.name}-{job_id[:8]}"
-                await crud.add_job_log(
-                    db, job_id,
+                await add_job_log(
+                    job_id,
                     f"Auto-registering model as '{reg_model_name}' in project {job.project_name or job.project_id}",
                     "INFO",
+                    db,
                 )
                 try:
                     registry = get_domino_registry()
@@ -439,28 +474,32 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                         project_name=job.project_name,
                     )
                     if reg_result.get("success"):
-                        await crud.add_job_log(
-                            db, job_id,
+                        await add_job_log(
+                            job_id,
                             f"Model registered: {reg_result.get('model_name')} v{reg_result.get('model_version')}",
                             "INFO",
+                            db,
                         )
                     else:
-                        await crud.add_job_log(
-                            db, job_id,
+                        await add_job_log(
+                            job_id,
                             f"Model registration returned failure: {reg_result.get('error', 'unknown')}",
                             "WARNING",
+                            db,
                         )
                 except Exception as e:
                     logger.warning(f"Auto-registration failed: {e}")
-                    await crud.add_job_log(
-                        db, job_id,
+                    await add_job_log(
+                        job_id,
                         f"Auto-registration failed: {e}",
                         "ERROR",
+                        db,
                     )
 
-            await crud.add_job_log(
-                db, job_id,
-                f"Job completed. Best model: {result['metrics'].get('best_model')}"
+            await add_job_log(
+                job_id,
+                f"Job completed. Best model: {result['metrics'].get('best_model')}",
+                db=db,
             )
 
             # End MLflow run with success status
@@ -478,7 +517,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 db, job_id, JobStatus.CANCELLED,
                 completed_at=utc_now(),
             )
-            await crud.add_job_log(db, job_id, "Training cancelled", "WARNING")
+            await add_job_log(job_id, "Training cancelled", "WARNING", db)
             if tracker:
                 try:
                     tracker.end_run(status="KILLED")
@@ -497,7 +536,7 @@ async def run_training_job(job_id: str, advanced_config: Optional[Dict[str, Any]
                 error_message=str(e),
                 completed_at=utc_now(),
             )
-            await crud.add_job_log(db, job_id, f"Training failed: {str(e)}", "ERROR")
+            await add_job_log(job_id, f"Training failed: {str(e)}", "ERROR", db)
 
             # End MLflow run with failure status
             if tracker:
