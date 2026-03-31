@@ -303,6 +303,7 @@ class TestBuildJobModel:
             time_limit=120,
             eval_metric="accuracy",
             experiment_name="exp-1",
+            execution_target="domino_job",
         )
         job = build_job_model(
             job_request=req,
@@ -333,6 +334,7 @@ class TestBuildJobModel:
             time_column="ts",
             id_column="item_id",
             prediction_length=14,
+            execution_target="domino_job",
         )
         job = build_job_model(req, "ts-job", "alice", None, None)
         assert job.model_type == ModelType.TIMESERIES
@@ -345,14 +347,9 @@ class TestBuildJobModel:
         job = build_job_model(req, "job", "user", None, None)
         assert job.execution_target == "domino_job"
 
-    def test_execution_target_defaults_to_local(self):
-        req = _make_create_request()
-        job = build_job_model(req, "job", "user", None, None)
-        assert job.execution_target == "local"
-
     def test_autogluon_config_stored(self):
         adv = AdvancedAutoGluonConfig(num_gpus=1)
-        req = _make_create_request(advanced_config=adv)
+        req = _make_create_request(advanced_config=adv, execution_target="domino_job")
         job = build_job_model(req, "job", "user", None, None)
         assert job.autogluon_config is not None
         assert "advanced" in job.autogluon_config
@@ -400,10 +397,6 @@ class TestBuildJobConfig:
 class TestResolveExecutionTarget:
     """Tests for resolve_execution_target."""
 
-    def test_local_default(self):
-        req = _make_create_request()
-        assert resolve_execution_target(req) == "local"
-
     def test_explicit_domino_job(self):
         req = _make_create_request(execution_target="domino_job")
         assert resolve_execution_target(req) == "domino_job"
@@ -412,9 +405,6 @@ class TestResolveExecutionTarget:
         req = _make_create_request(run_as_domino_job=True)
         assert resolve_execution_target(req) == "domino_job"
 
-    def test_legacy_flag_false_stays_local(self):
-        req = _make_create_request(run_as_domino_job=False)
-        assert resolve_execution_target(req) == "local"
 
 
 # ===========================================================================
@@ -776,22 +766,6 @@ class TestQueueCapacity:
         return MagicMock(**defaults)
 
     @pytest.mark.asyncio
-    async def test_local_queue_full_returns_429(self, db_session, mock_viewing_user):
-        mock_viewing_user
-        req = _make_create_request()
-        with (
-            patch("app.core.job_queue.get_job_queue") as mock_queue,
-            patch("app.services.job_service.get_settings") as mock_get_settings,
-        ):
-            mock_get_settings.return_value = self._mock_settings(max_local_queue_size=5)
-            mock_queue.return_value.get_total_tracked.return_value = 5
-
-            with pytest.raises(HTTPException) as exc_info:
-                await create_job_with_context(db_session, req)
-            assert exc_info.value.status_code == 429
-            assert "local" in exc_info.value.detail.lower()
-
-    @pytest.mark.asyncio
     async def test_domino_queue_full_returns_429(self, db_session, mock_viewing_user):
         mock_viewing_user
         req = _make_create_request(execution_target="domino_job")
@@ -802,6 +776,11 @@ class TestQueueCapacity:
                 return_value=20,
             ),
             patch("app.services.job_service.get_settings") as mock_get_settings,
+            patch(
+                "app.services.job_service.get_project_context",
+                new_callable=AsyncMock,
+                return_value=("proj-1", "my-proj", "owner"),
+            ),
         ):
             mock_get_settings.return_value = self._mock_settings(max_domino_queue_size=20)
 
@@ -809,30 +788,6 @@ class TestQueueCapacity:
                 await create_job_with_context(db_session, req)
             assert exc_info.value.status_code == 429
             assert "domino" in exc_info.value.detail.lower()
-
-    @pytest.mark.asyncio
-    async def test_local_queue_under_limit_proceeds(self, db_session, mock_viewing_user):
-        """When the local queue is under the limit, the job should be created."""
-        mock_viewing_user
-        req = _make_create_request()
-        with (
-            patch("app.core.job_queue.get_job_queue") as mock_queue,
-            patch("app.services.job_service.get_settings") as mock_get_settings,
-            patch("app.services.job_service.crud") as mock_crud,
-            patch("app.services.job_service._attach_external_links", side_effect=lambda job: job),
-        ):
-            mock_get_settings.return_value = self._mock_settings()
-            mock_queue.return_value.get_total_tracked.return_value = 3
-            mock_queue.return_value.enqueue = AsyncMock()
-
-            fake_job = MagicMock()
-            fake_job.id = "job-123"
-            fake_job.execution_target = "local"
-            mock_crud.create_job = AsyncMock(return_value=fake_job)
-            mock_crud.get_job_by_scoped_name = AsyncMock(return_value=None)
-
-            result = await create_job_with_context(db_session, req)
-            assert result is not None
 
     @pytest.mark.asyncio
     async def test_bad_input_returns_400_not_429(self, db_session, mock_viewing_user):

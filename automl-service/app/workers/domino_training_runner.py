@@ -21,7 +21,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run AutoML training job from Domino")
     parser.add_argument("--job-id", required=True, help="AutoML job id")
     parser.add_argument("--database-url", required=False, help="Database url to use", default=None)
-    parser.add_argument("--file-path", required=False, default=None, help="Resolved training data path")
     parser.add_argument(
         "--job-config",
         required=False,

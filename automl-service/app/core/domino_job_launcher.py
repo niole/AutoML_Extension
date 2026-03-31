@@ -357,7 +357,6 @@ class DominoJobLauncher:
                 self.TRAINING_RUNNER_PATH,
                 {
                     "job_id": job_id,
-                    "file_path": file_path,
                     "job_config": json.dumps(job_config_payload),
                 },
             )

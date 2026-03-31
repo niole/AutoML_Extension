@@ -345,6 +345,9 @@ async def create_job_with_context(
         raise
 
     if job.execution_target == "domino_job":
+        if not job.file_path:
+            raise ValueError(f"Job {job.id} has no file_path")
+
         file_path = job.file_path
 
         if job.data_source == "domino_dataset" and job.dataset_id:
@@ -866,8 +869,6 @@ async def _sync_domino_job_state(
         return job
 
     try:
-        from app.core.domino_job_launcher import get_domino_job_launcher
-
         status_result = await asyncio.wait_for(
             get_domino_job_launcher().get_job_status(job.domino_job_id),
             timeout=8.0,
@@ -1125,8 +1126,6 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
         stop_success = False
         stop_error = None
         if job.domino_job_id:
-            from app.core.domino_job_launcher import get_domino_job_launcher
-
             stop_result = await get_domino_job_launcher().stop_job(job.domino_job_id, project_id=job.project_id)
             stop_success = bool(stop_result.get("success"))
             stop_error = stop_result.get("error")
