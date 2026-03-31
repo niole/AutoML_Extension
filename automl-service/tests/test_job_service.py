@@ -745,6 +745,59 @@ class TestParseStatusesCsv:
 
 
 # ===========================================================================
+# create_job_with_context authorization
+# ===========================================================================
+
+
+class TestCreateJobAuthorization:
+    """Tests for authorization gates in create_job_with_context."""
+
+    @pytest.mark.asyncio
+    async def test_domino_job_launch_requires_start_permission(self, db_session, mock_viewing_user):
+        mock_viewing_user
+        req = _make_create_request(execution_target="domino_job")
+
+        with (
+            patch(
+                "app.services.job_service.require_domino_job_start",
+                side_effect=HTTPException(
+                    status_code=403,
+                    detail="This operation requires permission to start jobs in the target project",
+                ),
+            ) as mock_require_start,
+            patch("app.services.job_service.get_settings") as mock_get_settings,
+            patch(
+                "app.services.job_service.get_project_context",
+                new_callable=AsyncMock,
+                return_value=("proj-1", "my-proj", "owner"),
+            ),
+            patch(
+                "app.services.job_service._count_active_domino_jobs",
+                new_callable=AsyncMock,
+            ) as mock_count_active_domino_jobs,
+            patch(
+                "app.services.job_service.crud.create_job",
+                new_callable=AsyncMock,
+            ) as mock_create_job,
+        ):
+            mock_get_settings.return_value = MagicMock(
+                max_local_queue_size=10,
+                max_domino_queue_size=20,
+                domino_project_id=None,
+                domino_project_name=None,
+            )
+
+            with pytest.raises(HTTPException) as exc_info:
+                await create_job_with_context(db_session, req)
+
+            assert exc_info.value.status_code == 403
+            mock_require_start.assert_called_once_with(project_id="proj-1")
+
+            mock_count_active_domino_jobs.assert_not_awaited()
+            mock_create_job.assert_not_awaited()
+
+
+# ===========================================================================
 # Queue capacity enforcement (429)
 # ===========================================================================
 
