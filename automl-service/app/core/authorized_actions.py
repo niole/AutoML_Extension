@@ -76,4 +76,5 @@ def authorized_action_allowed(client, action: AuthorizedActionRequestItem) -> bo
     """Return True when any result for the given action request is allowed."""
     request_body = AuthorizedActionsRequest(actions=[action])
     action_results = fetch_authorized_actions(client, request_body)
+    print("action_results", action_results)
     return any(result.is_allowed() for result in action_results)

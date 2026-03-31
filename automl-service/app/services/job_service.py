@@ -33,7 +33,7 @@ from app.api.schemas.job import (
     RegisterModelResponse,
 )
 from app.config import get_settings
-from app.core.authorization import require_storage_modify, require_job_start, require_job_list
+from app.core.authorization import require_storage_modify, require_job_start, require_job_list, current_user_can_modify_storage, require_job_stop
 from app.core.context.user import get_viewing_user
 from app.core.domino_http import get_domino_public_api_client_sync
 from app.core.domino_job_launcher import get_domino_job_launcher
@@ -71,9 +71,14 @@ _CANONICAL_GIT_SERVICE_PROVIDER_VALUES = {
     provider.value.lower(): provider.value for provider in GitServiceProviderV1
 }
 
-async def require_local_job_owner(db, job_id: str):
+async def require_user_owns_local_job(db, job_id: str):
     """Return the job when the current viewer may access it."""
-    return await get_job_or_404(db, job_id, get_viewing_user_name())
+    username = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, username)
+
+    if job.owner != username:
+        if not current_user_can_modify_storage(project_id=job.project_id):
+            raise HTTPException(403, "Forbidden")
 
 def _normalize_job_name(name: str) -> str:
     """Return canonical job name used for validation and persistence."""
@@ -1080,7 +1085,6 @@ async def get_job_progress_response(db: AsyncSession, job_id: str)  -> JobProgre
         started_at=job.started_at,
     )
 
-
 async def cancel_job(db: AsyncSession, job_id: str) -> dict:
     """Cancel a pending/running job and queue task."""
     owner_user_name = get_viewing_user_name()
@@ -1096,6 +1100,8 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
         stop_success = False
         stop_error = None
         if job.domino_job_id:
+            require_job_stop(job.domino_job_id)
+
             stop_result = await get_domino_job_launcher().stop_job(job.domino_job_id, project_id=job.project_id)
             stop_success = bool(stop_result.get("success"))
             stop_error = stop_result.get("error")
@@ -1117,6 +1123,9 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
             "external_cancelled": stop_success,
             "external_error": stop_error,
         }
+    else:
+        # job is local
+        require_user_owns_local_job(db, job_id)
 
     from app.core.job_queue import get_job_queue
 
@@ -1133,24 +1142,27 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
 async def delete_job(db: AsyncSession, job_id: str) -> dict:
     """Delete job artifacts and DB row."""
     from app.core.cleanup_service import get_cleanup_service
-    # TODO needs own auth
+    require_user_owns_local_job(db, job_id)
+
     owner_user_name = get_viewing_user_name()
     job = await get_job_or_404(db, job_id, owner_user_name)
     cleanup_result = await get_cleanup_service().delete_job_artifacts(job, db)
     await crud.delete_job(db, job_id)
+
+    # we don't delete the domino job
+
     return {"message": "Job deleted", "job_id": job_id, "cleanup": cleanup_result}
 
 
 async def bulk_delete_jobs(db: AsyncSession, job_ids: list[str]) -> dict:
     """Delete multiple jobs, cancelling active ones first. Continues on per-job failure."""
     from app.core.cleanup_service import get_cleanup_service
-    # TODO needs own auth
-
     deleted_job_ids: list[str] = []
     failed: list[dict[str, str]] = []
 
     for job_id in job_ids:
         try:
+            require_user_owns_local_job(db, job_id)
             job = await crud.get_job(db, job_id)
             if not job:
                 failed.append({"job_id": job_id, "error": "Job not found"})
