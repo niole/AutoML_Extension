@@ -36,6 +36,7 @@ from app.services.job_service import (
     build_autogluon_config,
     build_job_config,
     build_job_model,
+    cancel_job,
     create_job_with_context,
     extract_metrics_leaderboard,
     get_job_logs,
@@ -850,6 +851,57 @@ class TestQueueCapacity:
                 project_id="proj-1", project_name="my-proj", project_owner="owner",
             )
         assert exc_info.value.status_code == 400
+
+
+# ===========================================================================
+# cancel_job
+# ===========================================================================
+
+
+class TestCancelJob:
+    """Tests for cancel_job."""
+
+    @pytest.mark.asyncio
+    async def test_domino_job_cancel_calls_stop_authorization(
+        self,
+        db_session,
+        make_job,
+        mock_viewing_user,
+    ):
+        mock_viewing_user
+        job = make_job(
+            status=JobStatus.PENDING,
+            execution_target="domino_job",
+            domino_job_id="run-123",
+            project_id="proj-1",
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        fake_launcher = MagicMock()
+        fake_launcher.stop_job = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("app.services.job_service._fetch_domino_job_or_throw"),
+            patch("app.services.job_service.require_domino_job_stop") as mock_require_stop,
+            patch("app.services.job_service.get_domino_job_launcher", return_value=fake_launcher),
+            patch(
+                "app.services.job_service.crud.update_job_domino_fields",
+                new_callable=AsyncMock,
+            ) as mock_update_domino_fields,
+            patch(
+                "app.services.job_service.crud.update_job_status",
+                new_callable=AsyncMock,
+            ) as mock_update_status,
+        ):
+            result = await cancel_job(db_session, job.id)
+
+        assert result["message"] == "Job cancelled"
+        assert result["external_cancelled"] is True
+        mock_require_stop.assert_called_once_with("run-123")
+        fake_launcher.stop_job.assert_awaited_once_with("run-123", project_id="proj-1")
+        mock_update_domino_fields.assert_awaited_once()
+        mock_update_status.assert_awaited_once()
 
 
 # ===========================================================================
