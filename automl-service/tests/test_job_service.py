@@ -773,6 +773,7 @@ class TestQueueCapacity:
                 new_callable=AsyncMock,
                 return_value=20,
             ),
+            patch("app.services.job_service.require_job_start"),
             patch("app.services.job_service.get_settings") as mock_get_settings,
         ):
             mock_get_settings.return_value = self._mock_settings(max_domino_queue_size=20)
