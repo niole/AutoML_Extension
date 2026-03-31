@@ -25,8 +25,22 @@ logger = logging.getLogger(__name__)
 class DominoJobLauncher:
     """Wrapper around Domino V4 Jobs REST API."""
 
+    _RUNNER_BASE = "/home/ubuntu/AutoML_Extension/automl-service/app/workers"
+    TRAINING_RUNNER_PATH = f"{_RUNNER_BASE}/domino_training_runner.py"
+    EDA_RUNNER_PATH = f"{_RUNNER_BASE}/domino_eda_runner.py"
+
     def __init__(self):
         self.settings = get_settings()
+        environment_id = os.environ.get("DOMINO_ENVIRONMENT_ID")
+        environment_revision_id = os.environ.get("DOMINO_ENVIRONMENT_REVISION_ID")
+        if not environment_id or not environment_revision_id:
+            raise RuntimeError(
+                "DOMINO_ENVIRONMENT_ID and DOMINO_ENVIRONMENT_REVISION_ID must be set. "
+                f"Got DOMINO_ENVIRONMENT_ID={environment_id!r}, "
+                f"DOMINO_ENVIRONMENT_REVISION_ID={environment_revision_id!r}"
+            )
+        self.environment_id: str = environment_id
+        self.environment_revision_id: str = environment_revision_id
 
     def _project_ref(self) -> Optional[str]:
         owner = self.settings.domino_project_owner or os.environ.get("DOMINO_PROJECT_OWNER")
@@ -48,23 +62,16 @@ class DominoJobLauncher:
             parts.extend([flag, str(value)])
         return parts
 
-    def _build_command(self, module: str, args: dict[str, Any]) -> str:
-        """Build a Domino Job command using a direct Python script invocation.
+    @staticmethod
+    def _build_command_from_path(script_path: str, args: dict[str, Any]) -> str:
+        """Build a Domino Job command referencing an absolute script path.
 
         Domino's /v4/jobs/start endpoint can reject complex shell wrappers
         (for example, `bash -lc 'if ...'`) as invalid commands. Keep the
         command string simple and explicit.
         """
-        cli_args = self._build_cli_args(args)
-        script_rel_path = f"{module.replace('.', '/')}.py"
-        service_dir = os.environ.get("AUTOML_SERVICE_DIR", "automl-service")
-        normalized_service_dir = (service_dir or "").strip().rstrip("/")
-        if not normalized_service_dir or normalized_service_dir in {".", "./"}:
-            runner_path = script_rel_path
-        else:
-            runner_path = f"{normalized_service_dir}/{script_rel_path}"
-
-        parts = ["python", runner_path, *cli_args]
+        cli_args = DominoJobLauncher._build_cli_args(args)
+        parts = ["python", script_path, *cli_args]
         return " ".join(shlex.quote(part) for part in parts)
 
     @staticmethod
@@ -115,6 +122,7 @@ class DominoJobLauncher:
 
         return None
 
+    # TODO: why does this exist? why do we care about what commit id is used in the job?
     @staticmethod
     def _resolve_launch_commit_id() -> tuple[Optional[str], Optional[str]]:
         """Resolve commit used for child Domino jobs.
@@ -243,10 +251,9 @@ class DominoJobLauncher:
         command: str,
         title: str,
         hardware_tier_name: Optional[str],
-        environment_id: Optional[str],
         project_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Launch a Domino job while pinning to the current commit when possible."""
+        """Launch a Domino job while pinning to the current commit and environment revision."""
         project_id = project_id or resolve_domino_project_id()
 
         # Resolve hardware tier name → ID (the SDK did this internally).
@@ -272,6 +279,8 @@ class DominoJobLauncher:
         payload: dict[str, Any] = {
             "projectId": project_id,
             "commandToRun": command,
+            "environmentId": self.environment_id,
+            "environmentRevisionId": self.environment_revision_id,
         }
         if commit_id:
             payload["commitId"] = commit_id
@@ -280,8 +289,6 @@ class DominoJobLauncher:
         elif hardware_tier_name:
             # Fallback: pass name directly in case Domino accepts it.
             payload["overrideHardwareTierId"] = hardware_tier_name
-        if environment_id:
-            payload["environmentId"] = environment_id
         if title:
             payload["title"] = title
 
@@ -321,7 +328,6 @@ class DominoJobLauncher:
         title: Optional[str] = None,
         job_config: Optional[dict[str, Any] | BaseModel] = None,
         hardware_tier_name: Optional[str] = None,
-        environment_id: Optional[str] = None,
         project_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Launch a training job in Domino.
@@ -347,8 +353,8 @@ class DominoJobLauncher:
             else:
                 job_config_payload = job_config
 
-            command = self._build_command(
-                "app.workers.domino_training_runner",
+            command = self._build_command_from_path(
+                self.TRAINING_RUNNER_PATH,
                 {
                     "job_id": job_id,
                     "file_path": file_path,
@@ -359,7 +365,6 @@ class DominoJobLauncher:
                 command=command,
                 title=title or f"AutoML Training {job_id[:8]}",
                 hardware_tier_name=hardware_tier_name,
-                environment_id=environment_id,
                 project_id=project_id,
             )
             if not isinstance(response, dict):
@@ -393,7 +398,6 @@ class DominoJobLauncher:
         id_column: Optional[str] = None,
         rolling_window: Optional[int] = None,
         hardware_tier_name: Optional[str] = None,
-        environment_id: Optional[str] = None,
         project_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Launch an async EDA job in Domino."""
@@ -404,8 +408,8 @@ class DominoJobLauncher:
             }
 
         try:
-            command = self._build_command(
-                "app.workers.domino_eda_runner",
+            command = self._build_command_from_path(
+                self.EDA_RUNNER_PATH,
                 {
                     "request_id": request_id,
                     "mode": mode,
@@ -423,7 +427,6 @@ class DominoJobLauncher:
                 command=command,
                 title=f"AutoML EDA {request_id[:8]}",
                 hardware_tier_name=hardware_tier_name,
-                environment_id=environment_id,
                 project_id=project_id,
             )
             if not isinstance(response, dict):

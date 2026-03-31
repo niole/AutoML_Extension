@@ -14,11 +14,10 @@ from app.db.models import JobStatus
 from app.core.autogluon_runner import AutoGluonRunner
 from app.api.schemas.job import AdvancedAutoGluonConfig as AdvancedConfig
 from app.core.experiment_tracker import ExperimentTracker
-from app.core.dataset_manager import DominoDatasetManager
 from app.core.domino_registry import get_domino_registry
 from app.core.model_diagnostics import get_model_diagnostics
 from app.core.model_loader import load_predictor, load_dataframe
-from app.core.utils import remap_shared_path, utc_now
+from app.core.utils import utc_now
 from app.services.models import JobConfig
 
 logger = logging.getLogger(__name__)
@@ -257,23 +256,9 @@ async def run_training_job_with_db(
             else:
                 reason = "not requested" if not job_config.enable_mlflow else "standalone mode"
                 await add_job_log(job_id, f"Experiment tracking disabled ({reason})", db)
-            dataset_manager = DominoDatasetManager()
-
-            # Get data file path
-            logger.info(f"[TRAINING DEBUG] Job data_source: {job_config.data_source}")
-            logger.info(f"[TRAINING DEBUG] Job file_path: {job_config.file_path}")
-            logger.info(f"[TRAINING DEBUG] Job dataset_id: {job_config.dataset_id}")
-
-            if job_config.data_source == "domino_dataset":
-                data_path = await dataset_manager.get_dataset_file_path(job_config.dataset_id)
-                await add_job_log(job_id, f"Using Domino dataset: {job_config.dataset_id}", db)
-            else:
-                data_path = remap_shared_path(job_config.file_path)
-                await add_job_log(job_id, f"Using uploaded file: {data_path}", db)
-
-            # TODO this log message is INFO but it claims it's DEBUG?
-            logger.info(f"[TRAINING DEBUG] Resolved data_path: {data_path}")
-            await add_job_log(job_id, f"[DEBUG] Data path resolved to: {data_path}", db)
+            data_path = job_config.file_path
+            logger.info(f"[TRAINING] data_path: {data_path}")
+            await add_job_log(job_id, f"Using data file: {data_path}", db)
 
             await _check_cancelled(job_id, db)
 
