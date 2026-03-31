@@ -33,10 +33,9 @@ from app.api.schemas.job import (
     RegisterModelResponse,
 )
 from app.config import get_settings
-from app.core.authorization import require_storage_modify
+from app.core.authorization import require_storage_modify, require_job_start, require_job_list
 from app.core.context.user import get_viewing_user
 from app.core.domino_http import get_domino_public_api_client_sync
-from app.core.authorization import require_job_list
 from app.core.domino_job_launcher import get_domino_job_launcher
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.db.models import Job, JobLog, JobStatus, ModelType, ProblemType
@@ -72,6 +71,9 @@ _CANONICAL_GIT_SERVICE_PROVIDER_VALUES = {
     provider.value.lower(): provider.value for provider in GitServiceProviderV1
 }
 
+async def require_local_job_owner(db, job_id: str):
+    """Return the job when the current viewer may access it."""
+    return await get_job_or_404(db, job_id, get_viewing_user_name())
 
 def _normalize_job_name(name: str) -> str:
     """Return canonical job name used for validation and persistence."""
@@ -248,7 +250,6 @@ async def create_job_with_context(
     project_owner: Optional[str],
 ) -> Job:
     """Validate, create, and enqueue a job using request-derived context."""
-    # TODO can user launch job in project?
     owner = get_viewing_user_name()
 
     logger.info(
@@ -274,6 +275,7 @@ async def create_job_with_context(
     settings = get_settings()
 
     if execution_target == "domino_job":
+        require_job_start(project_id=project_id)
         active_domino = await _count_active_domino_jobs(db)
         if active_domino >= settings.max_domino_queue_size:
             raise HTTPException(
@@ -285,6 +287,8 @@ async def create_job_with_context(
             )
     else:
         from app.core.job_queue import get_job_queue
+        # TODO authorization for launching local jobs doesn't make sense
+        # if the user can open the extension, they can run a job localy
 
         active_local = get_job_queue().get_total_tracked()
         if active_local >= settings.max_local_queue_size:
@@ -1176,7 +1180,8 @@ async def register_model_for_job(
     request: RegisterModelRequest,
 ) -> RegisterModelResponse:
     """Register a completed job's trained model in Domino registry."""
-    job = await get_job_or_404(db, job_id)
+    owner_user_name = get_viewing_user_name()
+    job = await get_job_or_404(db, job_id, owner_user_name)
     if job.status != JobStatus.COMPLETED:
         raise HTTPException(
             status_code=400,
