@@ -33,7 +33,7 @@ from app.api.schemas.job import (
     RegisterModelResponse,
 )
 from app.config import get_settings
-from app.core.authorization import require_storage_modify, require_job_start, require_job_list, current_user_can_modify_storage, require_job_stop
+from app.core.authorization import require_storage_modify, require_domino_job_start, require_domino_job_list, current_user_can_modify_storage, require_domino_job_stop
 from app.core.context.user import get_viewing_user
 from app.core.domino_http import get_domino_public_api_client_sync
 from app.core.domino_job_launcher import get_domino_job_launcher
@@ -280,7 +280,7 @@ async def create_job_with_context(
     settings = get_settings()
 
     if execution_target == "domino_job":
-        require_job_start(project_id=project_id)
+        require_domino_job_start(project_id=project_id)
         active_domino = await _count_active_domino_jobs(db)
         if active_domino >= settings.max_domino_queue_size:
             raise HTTPException(
@@ -397,7 +397,7 @@ async def list_jobs_filtered(
 
     if project_id_filter:
         # require domino job listing auth if project_id set
-        require_job_list(project_id_filter)
+        require_domino_job_list(project_id_filter)
     if not has_project_filter:
         # Without project scope, hide Domino-backed jobs from generic listings.
         execution_target_filter = "local"
@@ -1100,7 +1100,7 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
         stop_success = False
         stop_error = None
         if job.domino_job_id:
-            require_job_stop(job.domino_job_id)
+            require_domino_job_stop(job.domino_job_id)
 
             stop_result = await get_domino_job_launcher().stop_job(job.domino_job_id, project_id=job.project_id)
             stop_success = bool(stop_result.get("success"))

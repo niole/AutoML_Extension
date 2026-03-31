@@ -69,15 +69,6 @@ def _current_user_can_stop_job(client, job_id: str) -> bool:
     return authorized_action_allowed(client, action)
 
 
-def _current_user_can_delete_job(client, job_id: str) -> bool:
-    action = AuthorizedActionRequestItem(
-        id=f"job.project.delete_job-{job_id}",
-        code="job.project.delete_job",
-        context={"jobId": job_id},
-    )
-    return authorized_action_allowed(client, action)
-
-
 def current_user_can_list_jobs(project_id: Optional[str] = None) -> bool:
     try:
         client = get_domino_public_api_client_sync()
@@ -107,16 +98,7 @@ def current_user_can_stop_job(job_id: str) -> bool:
         return False
 
 
-def current_user_can_delete_job(job_id: str) -> bool:
-    try:
-        client = get_domino_public_api_client_sync()
-        return _current_user_can_delete_job(client, job_id)
-    except Exception:
-        logger.exception("Failed to resolve job delete permissions")
-        return False
-
-
-def require_job_list(project_id: Optional[str] = None) -> None:
+def require_domino_job_list(project_id: Optional[str] = None) -> None:
     if not current_user_can_list_jobs(project_id=project_id):
         raise HTTPException(
             status_code=403,
@@ -124,7 +106,7 @@ def require_job_list(project_id: Optional[str] = None) -> None:
         )
 
 
-def require_job_start(project_id: Optional[str] = None) -> None:
+def require_domino_job_start(project_id: Optional[str] = None) -> None:
     if not current_user_can_start_job(project_id=project_id):
         raise HTTPException(
             status_code=403,
@@ -132,17 +114,9 @@ def require_job_start(project_id: Optional[str] = None) -> None:
         )
 
 
-def require_job_stop(job_id: str) -> None:
+def require_domino_job_stop(job_id: str) -> None:
     if not current_user_can_stop_job(job_id=job_id):
         raise HTTPException(
             status_code=403,
             detail="This operation requires permission to stop the target job",
-        )
-
-
-def require_job_delete(job_id: str) -> None:
-    if not current_user_can_delete_job(job_id=job_id):
-        raise HTTPException(
-            status_code=403,
-            detail="This operation requires permission to delete the target job",
         )

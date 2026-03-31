@@ -111,11 +111,11 @@ def test_current_user_can_stop_job_when_authz_allows(monkeypatch):
     ]
 
 
-def test_current_user_can_delete_job_when_authz_allows(monkeypatch):
+def test_current_user_can_list_jobs_when_authz_allows(monkeypatch):
     from app.core import authorization as auth
 
     fake_httpx = FakeHttpxClient(
-        post_payload={"actions": [{"id": "job.project.delete_job-job-1", "result": True}]},
+        post_payload={"actions": [{"id": "job.project.list_jobs-project-1", "result": True}]},
     )
     fake_client = FakeDominoClient(fake_httpx)
     monkeypatch.setattr(
@@ -125,16 +125,16 @@ def test_current_user_can_delete_job_when_authz_allows(monkeypatch):
         raising=True,
     )
 
-    assert auth.current_user_can_delete_job(job_id="job-1") is True
+    assert auth.current_user_can_list_jobs(project_id="project-1") is True
     assert fake_httpx.post_calls == [
         {
             "url": "/account/authz/permissions/authorizedactions",
             "json": {
                 "actions": [
                     {
-                        "id": "job.project.delete_job-job-1",
-                        "code": "job.project.delete_job",
-                        "context": {"jobId": "job-1"},
+                        "id": "job.project.list_jobs-project-1",
+                        "code": "job.project.list_jobs",
+                        "context": {"projectId": "project-1"},
                     }
                 ]
             },
