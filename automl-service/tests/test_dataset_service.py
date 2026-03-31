@@ -30,13 +30,13 @@ from app.services.dataset_service import (
     MAX_PREVIEW_LIMIT,
     _safe_int,
     build_preview_payload,
-    build_compat_dataset_preview_payload,
+    preview_file_path_response,
     coerce_preview_response,
     list_dataset_files_response,
     list_datasets_response,
     normalize_preview_pagination,
 )
-from app.api.schemas.dataset import CompatDatasetPreviewRequest
+from app.api.schemas.dataset import DatasetFilePreviewRequest
 
 
 # ---------------------------------------------------------------------------
@@ -384,12 +384,12 @@ class TestCoercePreviewResponse:
 
 
 # ---------------------------------------------------------------------------
-# build_compat_dataset_preview_payload
+# preview_file_path_response
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_build_compat_dataset_preview_payload_fetches_dataset_file_over_api(monkeypatch):
+async def test_preview_file_path_response_fetches_dataset_file_over_api(monkeypatch):
     calls = []
 
     async def fake_get_snapshots(dataset_id):
@@ -420,8 +420,8 @@ async def test_build_compat_dataset_preview_payload_fetches_dataset_file_over_ap
         fake_get_file_raw,
     )
 
-    result = await build_compat_dataset_preview_payload(
-        body=CompatDatasetPreviewRequest(**{
+    result = await preview_file_path_response(
+        body=DatasetFilePreviewRequest(**{
             "dataset_id": "ds-123",
             "file_path": "folder/train.csv",
             "limit": 25,
@@ -445,7 +445,7 @@ async def test_build_compat_dataset_preview_payload_fetches_dataset_file_over_ap
 
 
 @pytest.mark.asyncio
-async def test_build_compat_dataset_preview_payload_rejects_large_remote_file(monkeypatch):
+async def test_preview_file_path_response_rejects_large_remote_file(monkeypatch):
     calls = []
 
     async def fake_get_snapshots(dataset_id):
@@ -473,8 +473,8 @@ async def test_build_compat_dataset_preview_payload_rejects_large_remote_file(mo
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await build_compat_dataset_preview_payload(
-            body=CompatDatasetPreviewRequest(
+        await preview_file_path_response(
+            body=DatasetFilePreviewRequest(
                 dataset_id="ds-large",
                 file_path="folder/huge.parquet",
             ),
@@ -489,10 +489,10 @@ async def test_build_compat_dataset_preview_payload_rejects_large_remote_file(mo
 
 
 @pytest.mark.asyncio
-async def test_build_compat_dataset_preview_payload_rejects_incomplete_request():
+async def test_preview_file_path_response_rejects_incomplete_request():
     with pytest.raises(HTTPException) as exc_info:
-        await build_compat_dataset_preview_payload(
-            body=CompatDatasetPreviewRequest(
+        await preview_file_path_response(
+            body=DatasetFilePreviewRequest(
                 dataset_id="ds-456",
                 file_path="",
                 limit=7,

@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import AsyncMock
 
 
 @pytest.fixture()
@@ -143,14 +144,15 @@ async def test_per_request_user_context_isolation_via_api(app_client, monkeypatc
 
     # First request has owner alice
     r1 = await app_client.post(
-        "/svc/v1/jobs?projectId=test-project-id",
+        "/svc/v1/jobs",
+        params={"projectId": "test-project-id"},
         json={
+            "execution_target": "domino_job",
             "name": "req1",
             "model_type": "tabular",
             "data_source": "upload",
             "file_path": "/tmp/dummy.csv",
             "target_column": "target",
-            "execution_target": "domino_job",
         },
     )
     assert r1.status_code == 200, r1.text
@@ -159,14 +161,15 @@ async def test_per_request_user_context_isolation_via_api(app_client, monkeypatc
 
     # Second request has owner bob
     r2 = await app_client.post(
-        "/svc/v1/jobs?projectId=test-project-id",
+        "/svc/v1/jobs",
+        params={"projectId": "test-project-id"},
         json={
+            "execution_target": "domino_job",
             "name": "req2",
             "model_type": "tabular",
             "data_source": "upload",
             "file_path": "/tmp/dummy.csv",
             "target_column": "target",
-            "execution_target": "domino_job",
         },
     )
     assert r2.status_code == 200, r2.text
