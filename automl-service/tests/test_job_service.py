@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
 import pytest
@@ -36,8 +36,10 @@ from app.services.job_service import (
     build_autogluon_config,
     build_job_config,
     build_job_model,
+    bulk_delete_jobs,
     cancel_job,
     create_job_with_context,
+    delete_job,
     extract_metrics_leaderboard,
     get_job_logs,
     get_job_or_404,
@@ -902,6 +904,107 @@ class TestCancelJob:
         fake_launcher.stop_job.assert_awaited_once_with("run-123", project_id="proj-1")
         mock_update_domino_fields.assert_awaited_once()
         mock_update_status.assert_awaited_once()
+
+
+# ===========================================================================
+# delete_job / bulk_delete_jobs
+# ===========================================================================
+
+
+class TestDeleteJob:
+    """Tests for delete_job."""
+
+    @pytest.mark.asyncio
+    async def test_delete_job_calls_owner_check(
+        self,
+        db_session,
+        make_job,
+        mock_viewing_user,
+    ):
+        mock_viewing_user
+        job = make_job(execution_target="domino_job", domino_job_id="run-123")
+        cleanup_service = MagicMock()
+        cleanup_service.delete_job_artifacts = AsyncMock(return_value={"deleted_files": 1})
+
+        with (
+            patch(
+                "app.services.job_service.require_user_owns_local_job",
+                new_callable=AsyncMock,
+            ) as mock_require_owner,
+            patch(
+                "app.services.job_service.get_job_or_404",
+                new_callable=AsyncMock,
+                return_value=job,
+            ),
+            patch(
+                "app.core.cleanup_service.get_cleanup_service",
+                return_value=cleanup_service,
+            ),
+            patch(
+                "app.services.job_service.crud.delete_job",
+                new_callable=AsyncMock,
+            ) as mock_delete_job,
+        ):
+            result = await delete_job(db_session, job.id)
+
+        assert result["message"] == "Job deleted"
+        assert result["job_id"] == job.id
+        mock_require_owner.assert_awaited_once_with(db_session, job.id)
+        cleanup_service.delete_job_artifacts.assert_awaited_once_with(job, db_session)
+        mock_delete_job.assert_awaited_once_with(db_session, job.id)
+
+
+class TestBulkDeleteJobs:
+    """Tests for bulk_delete_jobs."""
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_jobs_calls_owner_check_per_job(
+        self,
+        db_session,
+        make_job,
+        mock_viewing_user,
+    ):
+        mock_viewing_user
+        job1 = make_job(name="job-1", status=JobStatus.COMPLETED)
+        job2 = make_job(name="job-2", status=JobStatus.COMPLETED)
+        cleanup_service = MagicMock()
+        cleanup_service.delete_job_artifacts = AsyncMock(side_effect=[{"deleted_files": 1}, {"deleted_files": 2}])
+
+        with (
+            patch(
+                "app.services.job_service.require_user_owns_local_job",
+                new_callable=AsyncMock,
+            ) as mock_require_owner,
+            patch(
+                "app.services.job_service.crud.get_job",
+                new_callable=AsyncMock,
+                side_effect=[job1, job2],
+            ),
+            patch(
+                "app.core.cleanup_service.get_cleanup_service",
+                return_value=cleanup_service,
+            ),
+            patch(
+                "app.services.job_service.crud.delete_job",
+                new_callable=AsyncMock,
+            ) as mock_delete_job,
+        ):
+            result = await bulk_delete_jobs(db_session, [job1.id, job2.id])
+
+        assert result["deleted_job_ids"] == [job1.id, job2.id]
+        assert result["failed"] == []
+        assert mock_require_owner.await_args_list == [
+            call(db_session, job1.id),
+            call(db_session, job2.id),
+        ]
+        assert cleanup_service.delete_job_artifacts.await_args_list == [
+            call(job1, db_session),
+            call(job2, db_session),
+        ]
+        assert mock_delete_job.await_args_list == [
+            call(db_session, job1.id),
+            call(db_session, job2.id),
+        ]
 
 
 # ===========================================================================

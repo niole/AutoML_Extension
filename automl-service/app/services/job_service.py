@@ -1125,7 +1125,7 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
         }
     else:
         # job is local
-        require_user_owns_local_job(db, job_id)
+        await require_user_owns_local_job(db, job_id)
 
     from app.core.job_queue import get_job_queue
 
@@ -1142,7 +1142,7 @@ async def cancel_job(db: AsyncSession, job_id: str) -> dict:
 async def delete_job(db: AsyncSession, job_id: str) -> dict:
     """Delete job artifacts and DB row."""
     from app.core.cleanup_service import get_cleanup_service
-    require_user_owns_local_job(db, job_id)
+    await require_user_owns_local_job(db, job_id)
 
     owner_user_name = get_viewing_user_name()
     job = await get_job_or_404(db, job_id, owner_user_name)
@@ -1162,7 +1162,7 @@ async def bulk_delete_jobs(db: AsyncSession, job_ids: list[str]) -> dict:
 
     for job_id in job_ids:
         try:
-            require_user_owns_local_job(db, job_id)
+            await require_user_owns_local_job(db, job_id)
             job = await crud.get_job(db, job_id)
             if not job:
                 failed.append({"job_id": job_id, "error": "Job not found"})
