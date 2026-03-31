@@ -7,7 +7,7 @@ from typing import Optional
 
 from app.core.utils import utc_now
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,36 +102,6 @@ def get_viewing_user_name() -> str:
     return "anonymous"
 
 
-def get_request_project_id(request: Optional[Request]) -> str:
-    """Extract project_id from projectId query param."""
-    if request:
-        query_val = request.query_params.get("projectId")
-        if query_val:
-            return query_val
-    raise HTTPException(status_code=400, detail="projectId query parameter is required")
-
-
-async def get_project_context(
-    request: Optional[Request] = None,
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Resolve Domino project id/name/owner from projectId query param via API.
-
-    Returns (project_id, project_name, project_owner).
-    """
-    project_id = request.query_params.get("projectId") if request else None
-    if not project_id:
-        raise HTTPException(status_code=400, detail="projectId query parameter is required")
-
-    from app.services.project_resolver import resolve_project
-
-    info = await resolve_project(project_id)
-    if info:
-        return info.id, info.name, info.owner_username
-
-    raise HTTPException(
-        status_code=400,
-        detail=f"Could not resolve project {project_id}",
-    )
 
 
 def _attach_external_links(job: Job) -> Job:
@@ -273,12 +243,13 @@ def resolve_execution_target(job_request: JobCreateRequest) -> str:
 async def create_job_with_context(
     db: AsyncSession,
     job_request: JobCreateRequest,
-    request: Optional[Request] = None,
+    project_id: str,
+    project_name: Optional[str],
+    project_owner: Optional[str],
 ) -> Job:
     """Validate, create, and enqueue a job using request-derived context."""
     # TODO can user launch job in project?
     owner = get_viewing_user_name()
-    project_id, project_name, project_owner = await get_project_context(request)
 
     logger.info(
         "[JOB CREATE] user=%s project_id=%s project_name=%s project_owner=%s data_source=%s",
@@ -402,7 +373,6 @@ async def create_job_with_context(
 async def list_jobs_filtered(
     db: AsyncSession,
     list_request: JobListRequest,
-    request: Optional[Request] = None,
 ) -> list[Job]:
     """List jobs using advanced POST filters."""
     (
@@ -411,7 +381,7 @@ async def list_jobs_filtered(
         owner_filter,
         project_id_filter,
         project_name_filter,
-    ) = resolve_job_list_filters(list_request, request)
+    ) = resolve_job_list_filters(list_request)
 
     execution_target_filter = None
     has_project_filter = bool(project_id_filter or project_name_filter)
@@ -515,7 +485,6 @@ def get_queue_status() -> dict:
 
 def resolve_job_list_filters(
     list_request: JobListRequest,
-    request: Optional[Request],
 ) -> tuple[
     Optional[JobStatus],
     Optional[ModelType],
@@ -542,10 +511,7 @@ def resolve_job_list_filters(
     if list_request.project_id is not None:
         project_id_filter = list_request.project_id if list_request.project_id else None
     else:
-        # Default to sidebar project when no explicit filter is set
-        project_id_filter = (
-            request.headers.get("X-Project-Id") if request else None
-        )
+        project_id_filter = None
 
     return (
         status_filter,

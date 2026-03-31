@@ -2,11 +2,11 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
+from app.dependencies import get_db, get_project_context, get_request_project_id
 from app.api.schemas.job import (
     BulkDeleteJobsRequest,
     BulkDeleteJobsResponse,
@@ -47,14 +47,17 @@ router = APIRouter()
 async def create_job(
     job_request: JobCreateRequest,
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
+    project_context: tuple = Depends(get_project_context),
 ):
-    """Create a new training job.
-
-    The job is automatically associated with the current user (from domino-username header)
-    and project (from DOMINO_PROJECT_ID environment variable).
-    """
-    return await create_job_with_context(db=db, job_request=job_request, request=request)
+    """Create a new training job."""
+    project_id, project_name, project_owner = project_context
+    return await create_job_with_context(
+        db=db,
+        job_request=job_request,
+        project_id=project_id,
+        project_name=project_name,
+        project_owner=project_owner,
+    )
 
 
 @router.get("/queue/status")
@@ -68,14 +71,14 @@ async def preview_cleanup(
     statuses: str = "failed,cancelled",
     older_than_days: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
+    project_id: str = Depends(get_request_project_id),
 ):
     """Preview what would be deleted by a bulk cleanup."""
     return await preview_cleanup_service(
         db=db,
         statuses=statuses,
         older_than_days=older_than_days,
-        project_id=request.headers.get("X-Project-Id") if request else None,
+        project_id=project_id,
     )
 
 
@@ -83,7 +86,7 @@ async def preview_cleanup(
 async def bulk_cleanup(
     request: CleanupRequest,
     db: AsyncSession = Depends(get_db),
-    http_request: Request = None,
+    project_id: str = Depends(get_request_project_id),
 ):
     """Delete artifacts and DB rows for jobs matching the given criteria."""
     return await bulk_cleanup_service(
@@ -91,16 +94,19 @@ async def bulk_cleanup(
         statuses=request.statuses,
         older_than_days=request.older_than_days,
         include_orphans=request.include_orphans,
-        project_id=http_request.headers.get("X-Project-Id") if http_request else None,
+        project_id=project_id,
     )
 
 
 @router.post("/cleanup/orphans")
-async def delete_orphans(db: AsyncSession = Depends(get_db), request: Request = None):
+async def delete_orphans(
+    db: AsyncSession = Depends(get_db),
+    project_id: str = Depends(get_request_project_id),
+):
     """Delete orphaned model dirs and upload files with no matching job."""
     return await delete_orphans_service(
         db,
-        project_id=request.headers.get("X-Project-Id") if request else None,
+        project_id=project_id,
     )
 
 
@@ -159,7 +165,6 @@ async def delete_job(job_id: str, db: AsyncSession = Depends(get_db)):
 async def list_jobs_post(
     list_request: JobListRequest,
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
 ):
     """List jobs (POST for Domino compatibility).
 
@@ -171,7 +176,7 @@ async def list_jobs_post(
     - project_name: Filter by project name. Pass project_name="" to see jobs from all projects.
     - project_id: Filter by project ID (legacy, prefer project_name).
     """
-    jobs = await list_jobs_filtered(db=db, list_request=list_request, request=request)
+    jobs = await list_jobs_filtered(db=db, list_request=list_request)
 
     return JobListResponse(
         jobs=[JobResponse.model_validate(j) for j in jobs],

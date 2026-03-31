@@ -311,6 +311,7 @@ class TestBuildJobModel:
             owner="bob",
             project_id="pid-1",
             project_name="my-proj",
+            execution_target="domino_job",
         )
         assert isinstance(job, Job)
         assert job.name == "my-job"
@@ -336,7 +337,7 @@ class TestBuildJobModel:
             prediction_length=14,
             execution_target="domino_job",
         )
-        job = build_job_model(req, "ts-job", "alice", None, None)
+        job = build_job_model(req, "ts-job", "alice", None, None, execution_target="domino_job")
         assert job.model_type == ModelType.TIMESERIES
         assert job.time_column == "ts"
         assert job.id_column == "item_id"
@@ -397,6 +398,7 @@ class TestBuildJobConfig:
 class TestResolveExecutionTarget:
     """Tests for resolve_execution_target."""
 
+
     def test_explicit_domino_job(self):
         req = _make_create_request(execution_target="domino_job")
         assert resolve_execution_target(req) == "domino_job"
@@ -404,7 +406,6 @@ class TestResolveExecutionTarget:
     def test_legacy_run_as_domino_job_flag(self):
         req = _make_create_request(run_as_domino_job=True)
         assert resolve_execution_target(req) == "domino_job"
-
 
 
 # ===========================================================================
@@ -418,7 +419,7 @@ class TestResolveJobListFilters:
     def test_all_none_without_request(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request()
-        status, model_type, owner, pid, pname = resolve_job_list_filters(lr, None)
+        status, model_type, owner, pid, pname = resolve_job_list_filters(lr)
         assert status is None
         assert model_type is None
         assert owner == "test-user"
@@ -428,19 +429,19 @@ class TestResolveJobListFilters:
     def test_status_filter_parsed(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request(status="completed")
-        status, *_ = resolve_job_list_filters(lr, None)
+        status, *_ = resolve_job_list_filters(lr)
         assert status == JobStatus.COMPLETED
 
     def test_model_type_filter_parsed(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request(model_type="timeseries")
-        _, model_type, *_ = resolve_job_list_filters(lr, None)
+        _, model_type, *_ = resolve_job_list_filters(lr)
         assert model_type == ModelType.TIMESERIES
 
     def test_owner_from_list_request(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request(owner="alice")
-        _, _, owner, *_ = resolve_job_list_filters(lr, None)
+        _, _, owner, *_ = resolve_job_list_filters(lr)
         assert owner == "alice"
 
     def test_owner_from_http_request_header(self, monkeypatch):
@@ -453,26 +454,25 @@ class TestResolveJobListFilters:
         monkeypatch.setattr(job_service, "get_viewing_user", fake_get_viewing_user, raising=True)
 
         lr = _make_list_request()
-        request = _fake_request(headers={"domino-username": "bob"})
-        _, _, owner, *_ = resolve_job_list_filters(lr, request)
+        _, _, owner, *_ = resolve_job_list_filters(lr)
         assert owner == "bob"
 
     def test_owner_explicit_empty_string_gives_none(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request(owner="")
-        _, _, owner, *_ = resolve_job_list_filters(lr, None)
+        _, _, owner, *_ = resolve_job_list_filters(lr)
         assert owner is None
 
     def test_project_name_filter(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request(project_name="my-proj")
-        *_, pname = resolve_job_list_filters(lr, None)
+        *_, pname = resolve_job_list_filters(lr)
         assert pname == "my-proj"
 
     def test_project_id_filter(self, mock_viewing_user):
         mock_viewing_user
         lr = _make_list_request(project_id="pid-42")
-        _, _, _, pid, _ = resolve_job_list_filters(lr, None)
+        _, _, _, pid, _ = resolve_job_list_filters(lr)
         assert pid == "pid-42"
 
     @pytest.mark.asyncio
@@ -497,7 +497,6 @@ class TestResolveJobListFilters:
         jobs = await list_jobs_filtered(
             db=db_session,
             list_request=_make_list_request(project_name="test-project"),
-            request=None,
         )
 
         assert set([j.name for j in jobs]) == set(["local-job", "domino-job"])
@@ -520,7 +519,7 @@ class TestResolveJobListFilters:
         db_session.add_all([local_job, domino_job])
         await db_session.commit()
 
-        jobs = await list_jobs_filtered(db=db_session, list_request=_make_list_request(), request=None)
+        jobs = await list_jobs_filtered(db=db_session, list_request=_make_list_request())
 
         returned_ids = {job.id for job in jobs}
         assert local_job.id in returned_ids
@@ -548,7 +547,6 @@ class TestResolveJobListFilters:
         jobs = await list_jobs_filtered(
             db=db_session,
             list_request=_make_list_request(project_id="", project_name=""),
-            request=None,
         )
 
         returned_ids = {job.id for job in jobs}
@@ -776,16 +774,14 @@ class TestQueueCapacity:
                 return_value=20,
             ),
             patch("app.services.job_service.get_settings") as mock_get_settings,
-            patch(
-                "app.services.job_service.get_project_context",
-                new_callable=AsyncMock,
-                return_value=("proj-1", "my-proj", "owner"),
-            ),
         ):
             mock_get_settings.return_value = self._mock_settings(max_domino_queue_size=20)
 
             with pytest.raises(HTTPException) as exc_info:
-                await create_job_with_context(db_session, req)
+                await create_job_with_context(
+                    db_session, req,
+                    project_id="proj-1", project_name="my-proj", project_owner="owner",
+                )
             assert exc_info.value.status_code == 429
             assert "domino" in exc_info.value.detail.lower()
 
@@ -794,9 +790,11 @@ class TestQueueCapacity:
         """Validation errors (400) should fire before capacity checks (429)."""
         mock_viewing_user
         req = _make_create_request(data_source="domino_dataset", dataset_id=None)
-        # Even if queue is "full", bad input gets 400
         with pytest.raises(HTTPException) as exc_info:
-            await create_job_with_context(db_session, req)
+            await create_job_with_context(
+                db_session, req,
+                project_id="proj-1", project_name="my-proj", project_owner="owner",
+            )
         assert exc_info.value.status_code == 400
 
 
