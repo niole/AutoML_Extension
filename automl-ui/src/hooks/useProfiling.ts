@@ -43,7 +43,7 @@ interface UseProfilingResult {
 
 export function useProfiling(): UseProfilingResult {
   const [suggestions, setSuggestions] = useState<TargetSuggestion[]>([])
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const datasetId = searchParams.get('dataset_id')
 
   const profileState = useApiState(
