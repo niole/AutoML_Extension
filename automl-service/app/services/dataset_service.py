@@ -158,11 +158,16 @@ def _build_dataset_file_rows(dataset_id: str, dataset_name: str, rows: Sequence[
             continue
 
         full_path = file_name if not normalized_base_path else f"{normalized_base_path}/{file_name}"
+
+        size_in_bytes = 0
+        if not _is_unset(size_entry.size_in_bytes):
+            size_in_bytes = size_entry.size_in_bytes
+
         normalized_rows.append(
             DatasetFileResponse(
                 name=file_name,
                 path=full_path,
-                size=size_entry.size_in_bytes,
+                size=size_in_bytes,
             )
         )
 
