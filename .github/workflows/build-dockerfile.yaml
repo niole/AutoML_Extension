@@ -14,4 +14,4 @@ jobs:
       with:
         ref: ${{ github.ref_name }}
     - name: Build the Docker image
-      run: echo "FROM python:3.10-slim-bullseye" | cat - Dockerfile | docker build -
+      run: echo "HERE && echo "${{ github.ref_name }}" && echo "FROM python:3.10-slim-bullseye" | cat - Dockerfile | docker build -
