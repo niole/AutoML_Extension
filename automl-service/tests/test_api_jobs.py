@@ -77,7 +77,7 @@ def _mock_job_infra():
          patch("app.services.job_service.attach_external_links", side_effect=lambda job, logger: job), \
          patch("app.services.job_service._sync_domino_job_state", new=AsyncMock(side_effect=lambda db, job, **kwargs: job)), \
          patch("app.services.job_service._fetch_domino_job_or_throw", return_value=None), \
-         patch("app.services.job_service.require_job_list"):
+         patch("app.services.job_service.require_domino_job_list"):
         yield
 
 # ---------------------------------------------------------------------------
