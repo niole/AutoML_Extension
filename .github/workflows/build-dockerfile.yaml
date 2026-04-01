@@ -2,7 +2,6 @@ name: Build docker image on push
 
 on:
   push:
-    branches: [ "*" ]
 
 jobs:
 
@@ -13,4 +12,4 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: echo "FROM python:3.10-slim-bullseye" | docker build . --file Dockerfile
+      run: echo "FROM python:3.10-slim-bullseye" | cat - Dockerfile | docker build -
