@@ -1,0 +1,16 @@
+name: Build docker image on push
+
+on:
+  push:
+    branches: [ "*" ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build the Docker image
+      run: echo "FROM python:3.10-slim-bullseye" | docker build . --file Dockerfile
