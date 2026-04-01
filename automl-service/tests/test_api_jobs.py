@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.core.context.auth import set_request_auth_header
 
 pytestmark = pytest.mark.domino
 
@@ -71,14 +72,23 @@ async def _fake_resolve_project(project_id):
 @contextmanager
 def _mock_job_infra():
     """Patch Domino-dependent services so job API tests run without a live Domino environment."""
-    with patch("app.core.job_queue.get_job_queue", return_value=_mock_job_queue()), \
-         patch("app.services.job_service.get_domino_job_launcher", return_value=_mock_domino_launcher()), \
-         patch("app.services.project_resolver.resolve_project", side_effect=_fake_resolve_project), \
-         patch("app.services.job_service.attach_external_links", side_effect=lambda job, logger: job), \
-         patch("app.services.job_service._sync_domino_job_state", new=AsyncMock(side_effect=lambda db, job, **kwargs: job)), \
-         patch("app.services.job_service._fetch_domino_job_or_throw", return_value=None), \
-         patch("app.services.job_service.require_domino_job_list"):
-        yield
+    set_request_auth_header("Bearer test-token")
+    try:
+        with patch("app.core.job_queue.get_job_queue", return_value=_mock_job_queue()), \
+             patch("app.services.job_service.get_domino_job_launcher", return_value=_mock_domino_launcher()), \
+             patch("app.services.project_resolver.resolve_project", side_effect=_fake_resolve_project), \
+             patch("app.services.job_service.require_domino_job_start"), \
+             patch("app.services.job_service.require_domino_job_stop"), \
+             patch("app.services.job_service.attach_external_links", side_effect=lambda job, logger: job), \
+             patch("app.services.job_service._sync_domino_job_state", new=AsyncMock(side_effect=lambda db, job, **kwargs: job)), \
+             patch("app.services.job_service._fetch_domino_job_or_throw", return_value=None), \
+             patch("app.services.job_service.require_domino_job_list"), \
+             patch("app.core.authorization.current_user_can_start_job", return_value=True), \
+             patch("app.core.authorization.current_user_can_stop_job", return_value=True), \
+             patch("app.core.authorization.current_user_can_list_jobs", return_value=True):
+            yield
+    finally:
+        set_request_auth_header(None)
 
 # ---------------------------------------------------------------------------
 # POST /svc/v1/jobs — create job
@@ -86,7 +96,7 @@ def _mock_job_infra():
 
 
 @pytest.mark.asyncio
-async def test_create_tabular_job(app_client, domino_job_env):
+async def test_create_tabular_job(app_client):
     """POST /svc/v1/jobs with valid tabular payload creates a job and returns 200."""
     with _mock_job_infra():
         response = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -136,7 +146,7 @@ async def test_create_job_missing_name(app_client):
 
 
 @pytest.mark.asyncio
-async def test_create_timeseries_job_missing_time_column(app_client, domino_job_env):
+async def test_create_timeseries_job_missing_time_column(app_client):
     """POST /svc/v1/jobs for timeseries without time_column returns 400."""
     payload = {
         "name": "ts-job",
@@ -286,7 +296,7 @@ async def test_list_jobs_after_creation(app_client):
 
 
 @pytest.mark.asyncio
-async def test_get_job_by_id(app_client, domino_job_env):
+async def test_get_job_by_id(app_client):
     """GET /svc/v1/jobs/{id} returns the created job."""
     with _mock_job_infra():
         create_resp = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -317,7 +327,7 @@ async def test_get_job_not_found(app_client):
 
 
 @pytest.mark.asyncio
-async def test_get_job_status(app_client, domino_job_env):
+async def test_get_job_status(app_client):
     """GET /svc/v1/jobs/{id}/status returns status response shape."""
     with _mock_job_infra():
         create_resp = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -348,7 +358,7 @@ async def test_get_job_status_not_found(app_client):
 
 
 @pytest.mark.asyncio
-async def test_get_job_metrics(app_client, domino_job_env):
+async def test_get_job_metrics(app_client):
     """GET /svc/v1/jobs/{id}/metrics returns metrics response shape."""
     with _mock_job_infra():
         create_resp = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -378,7 +388,7 @@ async def test_get_job_metrics_not_found(app_client):
 
 
 @pytest.mark.asyncio
-async def test_cancel_pending_job(app_client, domino_job_env):
+async def test_cancel_pending_job(app_client):
     """POST /svc/v1/jobs/{id}/cancel cancels a pending job."""
     with _mock_job_infra():
         create_resp = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -392,7 +402,7 @@ async def test_cancel_pending_job(app_client, domino_job_env):
 
 
 @pytest.mark.asyncio
-async def test_cancel_already_cancelled_job(app_client, domino_job_env):
+async def test_cancel_already_cancelled_job(app_client):
     """POST /svc/v1/jobs/{id}/cancel on an already-cancelled job returns 400."""
     with _mock_job_infra():
         create_resp = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -419,7 +429,7 @@ async def test_cancel_nonexistent_job(app_client):
 
 
 @pytest.mark.asyncio
-async def test_delete_job(app_client, domino_job_env):
+async def test_delete_job(app_client):
     """DELETE /svc/v1/jobs/{id} deletes a job and returns confirmation."""
     with _mock_job_infra():
         create_resp = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})
@@ -450,7 +460,7 @@ async def test_delete_nonexistent_job(app_client):
 
 
 @pytest.mark.asyncio
-async def test_bulk_delete_jobs(app_client, domino_job_env):
+async def test_bulk_delete_jobs(app_client):
     """POST /svc/v1/jobs/bulk-delete deletes multiple jobs at once."""
     with _mock_job_infra():
         # Create two jobs with different names
@@ -462,10 +472,10 @@ async def test_bulk_delete_jobs(app_client, domino_job_env):
         job_id_1 = resp1.json()["id"]
         job_id_2 = resp2.json()["id"]
 
-    response = await app_client.post(
-        "/svc/v1/jobs/bulk-delete",
-        json={"job_ids": [job_id_1, job_id_2]},
-    )
+        response = await app_client.post(
+            "/svc/v1/jobs/bulk-delete",
+            json={"job_ids": [job_id_1, job_id_2]},
+        )
 
     assert response.status_code == 200
     body = response.json()
@@ -508,7 +518,7 @@ async def test_bulk_delete_empty_list_returns_422(app_client):
 
 
 @pytest.mark.asyncio
-async def test_create_duplicate_job_name_returns_409(app_client, domino_job_env):
+async def test_create_duplicate_job_name_returns_409(app_client):
     """POST /svc/v1/jobs with a duplicate name in the same scope returns 409."""
     with _mock_job_infra():
         resp1 = await app_client.post("/svc/v1/jobs", json=VALID_TABULAR_JOB, params={"projectId": "test-project-id"})

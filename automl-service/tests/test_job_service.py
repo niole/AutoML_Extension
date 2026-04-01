@@ -770,11 +770,6 @@ class TestCreateJobAuthorization:
             ) as mock_require_start,
             patch("app.services.job_service.get_settings") as mock_get_settings,
             patch(
-                "app.services.job_service.get_project_context",
-                new_callable=AsyncMock,
-                return_value=("proj-1", "my-proj", "owner"),
-            ),
-            patch(
                 "app.services.job_service._count_active_domino_jobs",
                 new_callable=AsyncMock,
             ) as mock_count_active_domino_jobs,
@@ -791,7 +786,13 @@ class TestCreateJobAuthorization:
             )
 
             with pytest.raises(HTTPException) as exc_info:
-                await create_job_with_context(db_session, req)
+                await create_job_with_context(
+                    db_session,
+                    req,
+                    project_id="proj-1",
+                    project_name="my-proj",
+                    project_owner="owner",
+                )
 
             assert exc_info.value.status_code == 403
             mock_require_start.assert_called_once_with(project_id="proj-1")
