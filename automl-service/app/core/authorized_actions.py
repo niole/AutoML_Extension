@@ -20,37 +20,21 @@ class AuthorizedActionsRequest(BaseModel):
 class AuthorizedActionResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    authorized: bool | None = None
-    is_authorized: bool | None = Field(default=None, validation_alias="isAuthorized")
-    allowed: bool | None = None
-    permitted: bool | None = None
+    id: str
+    code: str
     result: bool | None = None
 
     def is_allowed(self) -> bool:
-        for value in (
-            self.authorized,
-            self.is_authorized,
-            self.allowed,
-            self.permitted,
-            self.result,
-        ):
-            if value is not None:
-                return value
-        return False
+        return self.result
 
 
 class AuthorizedActionsEnvelope(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     actions: list[AuthorizedActionResult] | None = None
-    authorized_actions: list[AuthorizedActionResult] | None = Field(
-        default=None,
-        validation_alias="authorizedActions",
-    )
-    results: list[AuthorizedActionResult] | None = None
 
     def action_results(self) -> list[AuthorizedActionResult]:
-        return self.actions or self.authorized_actions or self.results or []
+        return self.actions or []
 
 
 def parse_authorized_actions(payload: object) -> list[AuthorizedActionResult]:
@@ -76,5 +60,4 @@ def authorized_action_allowed(client, action: AuthorizedActionRequestItem) -> bo
     """Return True when any result for the given action request is allowed."""
     request_body = AuthorizedActionsRequest(actions=[action])
     action_results = fetch_authorized_actions(client, request_body)
-    print("action_results", action_results)
     return any(result.is_allowed() for result in action_results)
