@@ -13,6 +13,7 @@ from app.core.eda_job_store import get_eda_job_store
 from app.core.ts_profiler import get_ts_profiler
 from app.api.error_handler import handle_errors
 from app.config import get_settings
+from app.core.authorization import require_domino_job_start
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -357,6 +358,7 @@ class AsyncProfileStartRequest(BaseModel):
     """Request to start async EDA profiling in a Domino Job."""
 
     mode: Literal["tabular", "timeseries"] = Field("tabular")
+    dataset_id: str = Field(..., description="The dataset in which the file is located")
     file_path: str = Field(..., description="Path to the data file")
     sample_size: int = Field(50000, description="Max rows to sample for profiling")
     sampling_strategy: str = Field(
@@ -444,8 +446,11 @@ async def profile_timeseries(request: TimeSeriesProfileRequest):
 
 @router.post("/profile/async/start", response_model=AsyncProfileStartResponse)
 @handle_errors("Async profiling start error")
-async def start_profile_async(request: AsyncProfileStartRequest):
+async def start_profile_async(request: AsyncProfileStartRequest, projectId: Optional[str] = None):
     """Start async EDA profiling as an external Domino Job."""
+    project_id = projectId
+    require_domino_job_start(project_id=project_id)
+
     if request.mode == "timeseries":
         if not request.time_column or not request.target_column:
             raise HTTPException(
@@ -462,11 +467,25 @@ async def start_profile_async(request: AsyncProfileStartRequest):
         request_payload=request.model_dump(exclude_none=True),
     )
 
+    # TODO do we also want to add the job queue thing here?
+
+    # TODO resolve file path to correct dataset location
+    dataset_id = request.dataset_id
+    from app.services.dataset_service import get_dataset_manager
+    dataset_manager = get_dataset_manager()
+    dataset_path = await dataset_manager.get_dataset_path(dataset_id)
+    if not dataset_path:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not resolve dataset path for dataset {dataset_id}",
+        )
+    file_path = f"{dataset_path}/{request.file_path}"
+
     launcher = get_domino_job_launcher()
     launch_result = await launcher.start_eda_job(
         request_id=request_id,
         mode=request.mode,
-        file_path=request.file_path,
+        file_path=file_path, # TODO normalize path to go to right place
         sample_size=request.sample_size,
         sampling_strategy=request.sampling_strategy,
         stratify_column=request.stratify_column,
@@ -475,6 +494,7 @@ async def start_profile_async(request: AsyncProfileStartRequest):
         id_column=request.id_column,
         rolling_window=request.rolling_window,
         hardware_tier_name=request.domino_hardware_tier_name or settings.domino_eda_hardware_tier_name,
+        project_id=projectId,
     )
     if not launch_result.get("success"):
         error_message = launch_result.get("error", "Failed to launch async profiling job")

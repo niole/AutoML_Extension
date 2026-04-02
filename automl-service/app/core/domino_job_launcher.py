@@ -251,10 +251,10 @@ class DominoJobLauncher:
         command: str,
         title: str,
         hardware_tier_name: Optional[str],
-        project_id: Optional[str] = None,
+        project_id: str,
     ) -> dict[str, Any]:
         """Launch a Domino job while pinning to the current commit and environment revision."""
-        project_id = project_id or resolve_domino_project_id()
+        #project_id = project_id or resolve_domino_project_id()
 
         # Resolve hardware tier name → ID (the SDK did this internally).
         hardware_tier_id = None
@@ -391,13 +391,13 @@ class DominoJobLauncher:
         file_path: str,
         sample_size: int,
         sampling_strategy: str,
+        project_id: str,
         stratify_column: Optional[str] = None,
         time_column: Optional[str] = None,
         target_column: Optional[str] = None,
         id_column: Optional[str] = None,
         rolling_window: Optional[int] = None,
         hardware_tier_name: Optional[str] = None,
-        project_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Launch an async EDA job in Domino."""
         if not self.settings.is_domino_environment:

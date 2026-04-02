@@ -225,6 +225,7 @@ export interface TimeSeriesProfile {
 
 export interface AsyncProfileStartRequest {
   mode: 'tabular' | 'timeseries'
+  dataset_id: string
   file_path: string
   sample_size?: number
   sampling_strategy?: string

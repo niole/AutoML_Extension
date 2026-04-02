@@ -62,6 +62,9 @@ class EDAJobStore:
             "updated_at": _utc_now_iso(),
             "error": None,
         }
+        print("CREATE REQUEST", self._meta_path(request_id), meta)
+        # TODO do we write the state of the job to the file system because we
+        # can't store this info in sqlite?
         self._write_json(self._meta_path(request_id), meta)
         return meta
 

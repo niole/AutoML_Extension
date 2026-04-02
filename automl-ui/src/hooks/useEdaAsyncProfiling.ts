@@ -6,6 +6,7 @@ import type {
   DataProfile,
   TimeSeriesProfile,
 } from '../types/profiling'
+import { useSearchParams } from 'react-router-dom'
 
 type AsyncStatus = 'idle' | 'starting' | 'pending' | 'running' | 'completed' | 'failed'
 type ExecutionTarget = 'local' | 'domino_job'
@@ -50,6 +51,7 @@ export function useEdaAsyncProfiling({
   setTsProfileData,
   addNotification,
 }: UseEdaAsyncProfilingParams): UseEdaAsyncProfilingResult {
+  const [searchParams] = useSearchParams()
   const [asyncRequestId, setAsyncRequestId] = useState<string | null>(null)
   const [asyncDominoJobId, setAsyncDominoJobId] = useState<string | null>(null)
   const [asyncProfileStatus, setAsyncProfileStatus] = useState<AsyncStatus>('idle')
@@ -72,8 +74,14 @@ export function useEdaAsyncProfiling({
     setAsyncProfileError(null)
     setAsyncRequestId(null)
     try {
+      const datasetId = searchParams.get('dataset_id');
+      if (!datasetId) {
+        throw new Error("Dataset id must exist in query parameters in order to start async tabular profiling")
+      }
+
       const response = await startAsyncProfile({
         mode: 'tabular',
+        dataset_id: datasetId,
         file_path: filePath,
         sample_size: sampleSize,
         sampling_strategy: samplingStrategy,
@@ -103,8 +111,13 @@ export function useEdaAsyncProfiling({
     setAsyncProfileError(null)
     setAsyncRequestId(null)
     try {
+      const datasetId = searchParams.get('dataset_id');
+      if (!datasetId) {
+        throw new Error("Dataset id must exist in query parameters in order to start async timeseries profiling")
+      }
       const response = await startAsyncProfile({
         mode: 'timeseries',
+        dataset_id: datasetId,
         file_path: filePath,
         time_column: timeColumn,
         target_column: targetColumn,

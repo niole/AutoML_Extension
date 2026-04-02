@@ -14,9 +14,13 @@ import { useProjectUserSummary } from '../hooks/useProjectUserSummary'
 import { ProfiledDataView } from '../components/eda/ProfiledDataView'
 import { TimeSeriesConfigPanel } from '../components/eda/TimeSeriesConfigPanel'
 import { buildAppPath } from '../utils/appPath'
+import { Job } from '@/types/job'
+import { getJob } from '@/api/jobs'
+import { toDominoTenantUrl } from '@/utils/dominoLinks'
 
 function EDAAnalysis() {
   const { dominoJobs } = useCapabilities()
+  const [edaJob, setEdaJob] = useState<Job | null>(null)
   const { project_name: projectName } = useProjectUserSummary()
   const [searchParams] = useSearchParams()
   const { data: datasetsData, isLoading: loadingDatasets, error: datasetsError } = useDatasets()
@@ -118,6 +122,19 @@ function EDAAnalysis() {
     addNotification,
   })
 
+  async function getJobResponse(jobId: string) {
+      const job = await getJob(jobId)
+      setEdaJob(job)
+  }
+
+  useEffect(() => {
+    if (asyncDominoJobId) {
+      getJobResponse(asyncDominoJobId)
+    } else {
+      setEdaJob(null)
+    }
+  }, [asyncDominoJobId])
+
   useEffect(() => {
     if (!selectedFilePath) return
     if (edaExecutionTarget === 'local') {
@@ -180,6 +197,11 @@ function EDAAnalysis() {
   }, [profile])
 
   const handleRunTSAnalysis = (tc: string, tgt: string, id: string, size: number, strategy: string, rw: string) => {
+    const datasetId = searchParams.get('dataset_id');
+    if (!datasetId) {
+      throw new Error("Dataset id must exist in query parameters in order to run time series analysis")
+    }
+
     if (!selectedFilePath) return
     setTimeColumn(tc)
     setTargetColumn(tgt)
@@ -191,6 +213,7 @@ function EDAAnalysis() {
     }
     void profileTimeSeries({
       mode: 'timeseries',
+      dataset_id: datasetId,
       file_path: selectedFilePath,
       time_column: tc,
       target_column: tgt,
@@ -307,6 +330,7 @@ function EDAAnalysis() {
   }
 
   // File is selected - show EDA analysis
+  const edaJobUrl = toDominoTenantUrl(edaJob?.domino_job_url)
   return (
     <div className="space-y-6">
       {breadcrumb}
@@ -349,12 +373,11 @@ function EDAAnalysis() {
         <label className="text-sm text-domino-text-secondary">Execution:</label>
         <select
           value={edaExecutionTarget}
-          disabled={true}
           onChange={(e) => setEdaExecutionTarget(e.target.value as 'local' | 'domino_job')}
           className="h-[32px] px-3 text-sm border border-domino-border rounded-[2px] bg-white"
         >
           <option value="local">Local (In App)</option>
-          {dominoJobs && <option value="domino_job">Domino Job</option>}
+          {/*dominoJobs &&*/ <option value="domino_job">Domino Job</option>}
         </select>
       </div>
 
@@ -362,7 +385,7 @@ function EDAAnalysis() {
         <div className="border border-domino-border bg-domino-bg-tertiary p-3 text-sm text-domino-text-secondary">
           <p>
             Async profiling status: <span className="font-medium capitalize">{asyncProfileStatus}</span>
-            {asyncDominoJobId ? ` | Domino Job ID: ${asyncDominoJobId}` : ''}
+            {asyncDominoJobId ? <><span>{" | "}</span><Link to={edaJobUrl}>{`Domino Job ID: ${asyncDominoJobId}`}</Link></> : ''}
           </p>
           {asyncProfileError && (
             <p className="text-domino-accent-red mt-1">{asyncProfileError}</p>
