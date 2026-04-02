@@ -13,6 +13,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.job_file_cache import cache_dir_for_job
 from app.db import crud
 from app.db.models import Job, JobStatus
 
@@ -38,16 +39,17 @@ class CleanupService:
         job_logs_deleted = 0
         registered_model_deleted = False
 
-        # 1. Model files
-        if job.model_path and os.path.exists(job.model_path):
-            try:
-                model_files_size_bytes = _dir_size(job.model_path)
-                shutil.rmtree(job.model_path)
+        # 1. Job file cache (MLflow artifacts downloaded to app's temp_path)
+        try:
+            cache_dir = cache_dir_for_job(job.id)
+            if os.path.isdir(cache_dir):
+                model_files_size_bytes = _dir_size(cache_dir)
+                shutil.rmtree(cache_dir)
                 model_files_deleted = True
-                logger.info(f"Deleted model dir {job.model_path} ({model_files_size_bytes} bytes)")
-            except Exception as e:
-                errors.append(f"model_files: {e}")
-                logger.warning(f"Failed to delete model dir {job.model_path}: {e}")
+                logger.info(f"Deleted job file cache {cache_dir} ({model_files_size_bytes} bytes)")
+        except Exception as e:
+            errors.append(f"model_files: {e}")
+            logger.warning(f"Failed to delete job file cache for job {job.id}: {e}")
 
         # 2. Upload file (only if data_source == "upload" and no other job shares it)
         if (

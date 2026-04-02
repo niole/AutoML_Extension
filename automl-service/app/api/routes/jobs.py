@@ -208,3 +208,5 @@ async def register_job_model(
 ):
     """Register a trained model from a completed job to Domino registry."""
     return await register_model_for_job(db, job_id, request)
+
+

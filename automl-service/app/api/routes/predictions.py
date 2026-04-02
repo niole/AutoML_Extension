@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.prediction_service import get_prediction_service
 from app.core.model_diagnostics import get_model_diagnostics
 from app.core.domino_registry import get_domino_registry
+from app.db import crud
 from app.dependencies import get_db
 from app.api.utils import get_job_paths
 from app.api.error_handler import handle_errors
+from app.services.job_service import _ensure_mlflow_results
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -252,20 +254,24 @@ async def get_feature_importance(
     db: AsyncSession = Depends(get_db)
 ):
     """Get feature importance for a trained model (identified by job_id)."""
-    result = await _run_diagnostics(
-        db,
+    job = await crud.get_job(db, request.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
+
+    # do not call _sync_domino_job_state here — only do that in job endpoints, not prediction endpoints. 
+    # _ensure_mlflow_results handles the case where the job is already COMPLETED in the DB but results were never fetched.
+    job = await _ensure_mlflow_results(db, job)
+    model_type = request.model_type or (job.model_type.value if job.model_type else "tabular")
+
+    if not job.feature_importance:
+        raise HTTPException(status_code=404, detail="Feature importance not available for this job")
+
+    return FeatureImportanceResponse(
         job_id=request.job_id,
-        diagnostics_method="get_feature_importance",
-        model_type_override=request.model_type,
-        data_path_override=request.data_path,
-        require_data_path=False,
+        model_type=model_type,
+        method="mlflow",
+        features=job.feature_importance,
     )
-
-    # Replace model_path with job_id in response
-    result["job_id"] = request.job_id
-    result.pop("model_path", None)
-
-    return FeatureImportanceResponse(**result)
 
 
 class LeaderboardRequest(BaseModel):
