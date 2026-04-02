@@ -27,7 +27,7 @@ class DominoJobLauncher:
 
     _RUNNER_BASE = "/home/ubuntu/AutoML_Extension/automl-service/app/workers"
     TRAINING_RUNNER_PATH = f"{_RUNNER_BASE}/domino_training_runner.py"
-    EDA_RUNNER_PATH = f"{_RUNNER_BASE}/domino_eda_runner.py"
+    EDA_RUNNER_PATH = "automl-service/app/workers/domino_eda_runner.py" # TODO remove f"{_RUNNER_BASE}/domino_eda_runner.py"
 
     def __init__(self):
         self.settings = get_settings()
@@ -392,6 +392,7 @@ class DominoJobLauncher:
         sample_size: int,
         sampling_strategy: str,
         project_id: str,
+        experiment_name: str,
         stratify_column: Optional[str] = None,
         time_column: Optional[str] = None,
         target_column: Optional[str] = None,
@@ -411,6 +412,7 @@ class DominoJobLauncher:
                 self.EDA_RUNNER_PATH,
                 {
                     "request_id": request_id,
+                    "experiment_name": experiment_name,
                     "mode": mode,
                     "file_path": file_path,
                     "sample_size": sample_size,

@@ -94,6 +94,8 @@ class TestStartEdaJob:
             result = await launcher.start_eda_job(
                 request_id="req-1", mode="tabular", file_path="/data/train.csv",
                 sample_size=50000, sampling_strategy="random",
+                project_id=PROJECT_ID,
+                experiment_name="exp-1",
             )
         assert result["success"] is False
 
@@ -116,11 +118,12 @@ class TestStartEdaJob:
                 stratify_column=None, time_column=None, target_column=None,
                 id_column=None, rolling_window=None,
                 project_id=PROJECT_ID,
+                experiment_name="exp-1",
             )
 
         expected_command = (
             f"python {DominoJobLauncher.EDA_RUNNER_PATH}"
-            " --request-id req-1 --mode timeseries --file-path /mnt/datasets/eda.parquet"
+            " --request-id req-1 --experiment-name exp-1 --mode timeseries --file-path /mnt/datasets/eda.parquet"
             " --sample-size 10000 --sampling-strategy random"
         )
         assert captured["payload"]["commandToRun"] == expected_command

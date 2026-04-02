@@ -1,6 +1,11 @@
 """Data profiling endpoints."""
 
+import json
 import logging
+import os
+import tempfile
+import mlflow
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -9,6 +14,10 @@ from pydantic import BaseModel, Field
 
 from app.core.data_profiler import get_data_profiler, DataProfiler
 from app.core.domino_job_launcher import get_domino_job_launcher
+from app.core.eda_job_metadata import (
+    EDA_JOB_REQUEST_ID_TAG,
+    EDA_JOB_RESULT_ARTIFACT_PATH,
+)
 from app.core.eda_job_store import get_eda_job_store
 from app.core.ts_profiler import get_ts_profiler
 from app.api.error_handler import handle_errors
@@ -18,10 +27,24 @@ from app.core.authorization import require_domino_job_start
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_FAILED_TERMINAL_EDA_JOB_STATUSES = {
+    "failed",
+    "error",
+    "killed",
+    "stopped",
+    "cancelled",
+}
+
+_TERMINAL_EDA_JOB_STATUSES = {
+    "success",
+} | _FAILED_TERMINAL_EDA_JOB_STATUSES
 
 class ProfileRequest(BaseModel):
     """Request for data profiling."""
-    dataset_id: str = Field(..., description="The dataset to profile")
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID when file_path is relative to a Domino dataset",
+    )
     file_path: str = Field(..., description="Path to the data file")
     sample_size: int = Field(50000, description="Max rows to sample for profiling")
     sampling_strategy: str = Field("random", description="Sampling strategy: random, stratified, head, full")
@@ -126,6 +149,7 @@ async def suggest_target_column(request: ProfileRequest):
         profile = await profiler.profile_file(
             dataset_id=request.dataset_id,
             file_path=request.file_path,
+            dataset_id=request.dataset_id,
             sample_size=request.sample_size,
             sampling_strategy=request.sampling_strategy,
             stratify_column=request.stratify_column,
@@ -143,6 +167,10 @@ async def suggest_target_column(request: ProfileRequest):
 
 class QuickProfileRequest(BaseModel):
     """Request for quick data profiling."""
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID when file_path is relative to a Domino dataset",
+    )
     file_path: str = Field(..., description="Path to the data file")
 
 
@@ -153,7 +181,11 @@ async def quick_profile(request: QuickProfileRequest):
     file_path = request.file_path
     profiler = get_data_profiler()
 
-    profile = profiler.profile_file(file_path, sample_size=1000)
+    profile = await profiler.profile_file(
+        file_path=file_path,
+        dataset_id=request.dataset_id,
+        sample_size=1000,
+    )
 
     # Return simplified summary
     return {
@@ -179,6 +211,10 @@ async def quick_profile(request: QuickProfileRequest):
 
 class ColumnProfileRequest(BaseModel):
     """Request for single-column profiling."""
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID when file_path is relative to a Domino dataset",
+    )
     file_path: str = Field(..., description="Path to the data file")
     column_name: str = Field(..., description="Name of the column to profile")
 
@@ -192,7 +228,11 @@ async def profile_column(request: ColumnProfileRequest):
     profiler = get_data_profiler()
 
     try:
-        profile = profiler.profile_file(file_path, sample_size=10000)
+        profile = await profiler.profile_file(
+            file_path=file_path,
+            dataset_id=request.dataset_id,
+            sample_size=10000,
+        )
 
         for col in profile["columns"]:
             if col["name"] == column_name:
@@ -330,6 +370,10 @@ async def get_available_presets():
 
 class TimeSeriesProfileRequest(BaseModel):
     """Request for time series profiling."""
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID when file_path is relative to a Domino dataset",
+    )
     file_path: str = Field(..., description="Path to the data file")
     time_column: str = Field(..., description="Name of the datetime column")
     target_column: str = Field(..., description="Name of the numeric target column")
@@ -416,10 +460,11 @@ async def profile_timeseries(request: TimeSeriesProfileRequest):
     profiler = get_ts_profiler()
 
     try:
-        result = profiler.profile_timeseries_file(
+        result = await profiler.profile_timeseries_file(
             file_path=request.file_path,
             time_column=request.time_column,
             target_column=request.target_column,
+            dataset_id=request.dataset_id,
             id_column=request.id_column,
             sample_size=request.sample_size,
             sampling_strategy=request.sampling_strategy,
@@ -461,15 +506,16 @@ async def start_profile_async(request: AsyncProfileStartRequest, projectId: Opti
     store = get_eda_job_store()
     settings = get_settings()
     request_id = str(uuid4())
+    experiment_name = "eda_job_results_" + str(uuid4())
     store.create_request(
         request_id=request_id,
         mode=request.mode,
         request_payload=request.model_dump(exclude_none=True),
+        experiment_name=experiment_name,
     )
 
     # TODO do we also want to add the job queue thing here?
 
-    # TODO resolve file path to correct dataset location
     dataset_id = request.dataset_id
     from app.services.dataset_service import get_dataset_manager
     dataset_manager = get_dataset_manager()
@@ -485,7 +531,7 @@ async def start_profile_async(request: AsyncProfileStartRequest, projectId: Opti
     launch_result = await launcher.start_eda_job(
         request_id=request_id,
         mode=request.mode,
-        file_path=file_path, # TODO normalize path to go to right place
+        file_path=file_path,
         sample_size=request.sample_size,
         sampling_strategy=request.sampling_strategy,
         stratify_column=request.stratify_column,
@@ -495,6 +541,7 @@ async def start_profile_async(request: AsyncProfileStartRequest, projectId: Opti
         rolling_window=request.rolling_window,
         hardware_tier_name=request.domino_hardware_tier_name or settings.domino_eda_hardware_tier_name,
         project_id=projectId,
+        experiment_name=experiment_name,
     )
     if not launch_result.get("success"):
         error_message = launch_result.get("error", "Failed to launch async profiling job")
@@ -518,6 +565,98 @@ async def start_profile_async(request: AsyncProfileStartRequest, projectId: Opti
         domino_job_url=launch_result.get("domino_job_url"),
     )
 
+def _resolve_eda_job_result(
+    request_id: str,
+    experiment_name: Optional[str],
+) -> Optional[dict[str, Any]]:
+    # TODO reuse ryan's artifact fetching code
+    """Resolve an async EDA result from MLflow using the request-id tagged run."""
+    if not experiment_name:
+        logger.debug("No experiment name provided when resolving eda job results. Returning None")
+        return None
+
+    client = mlflow.tracking.MlflowClient()
+
+    experiment = client.get_experiment_by_name(experiment_name)
+
+    if experiment is None:
+        logger.debug(
+            "MLflow experiment %s not found while resolving EDA request %s",
+            experiment_name,
+            request_id,
+        )
+        return None
+
+    runs = client.search_runs(
+        experiment_ids=[str(experiment.experiment_id)],
+        filter_string=f"tags.{EDA_JOB_REQUEST_ID_TAG} = '{request_id}'",
+        order_by=["attributes.start_time DESC"],
+        max_results=1,
+    )
+
+    if not runs or len(runs) == 0:
+        logger.debug(
+            "No MLflow runs found for experiment %s and EDA request %s",
+            experiment_name,
+            request_id,
+        )
+        return None
+
+    artifact_candidates = [EDA_JOB_RESULT_ARTIFACT_PATH]
+
+    for run in runs:
+        run_id = getattr(run.info, "run_id", None)
+        if not run_id:
+            continue
+
+        try:
+            root_artifacts = client.list_artifacts(run_id=run_id)
+            print(root_artifacts)
+            for artifact in root_artifacts:
+                artifact_path = getattr(artifact, "path", None)
+                is_dir = bool(getattr(artifact, "is_dir", False))
+                if (
+                    artifact_path
+                    and not is_dir
+                    and artifact_path.lower().endswith(".json")
+                    and artifact_path not in artifact_candidates
+                ):
+                    artifact_candidates.append(artifact_path)
+        except Exception:
+            logger.debug("Failed listing MLflow artifacts for run %s", run_id, exc_info=True)
+
+        for artifact_path in artifact_candidates:
+            try:
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    downloaded_path = mlflow.artifacts.download_artifacts(
+                        run_id=run_id,
+                        artifact_path=artifact_path,
+                        dst_path=temp_dir,
+                        tracking_uri=tracking_uri,
+                    )
+                    payload = json.loads(Path(downloaded_path).read_text(encoding="utf-8"))
+                    if isinstance(payload, dict):
+                        return payload
+                    logger.warning(
+                        "EDA result artifact %s from run %s did not contain a JSON object",
+                        artifact_path,
+                        run_id,
+                    )
+            except Exception:
+                logger.debug(
+                    "Failed downloading MLflow artifact %s for EDA request %s from run %s",
+                    artifact_path,
+                    request_id,
+                    run_id,
+                    exc_info=True,
+                )
+
+    logger.debug(
+        "No readable MLflow JSON artifact found for experiment %s and EDA request %s",
+        experiment_name,
+        request_id,
+    )
+    return None
 
 async def _build_async_status_response(request_id: str) -> AsyncProfileStatusResponse:
     """Load async EDA status from file-backed metadata/results."""
@@ -546,7 +685,8 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
     domino_job_id = metadata.get("domino_job_id")
     domino_job_status = metadata.get("domino_job_status")
 
-    if status in {"running", "pending"} and domino_job_id:
+    # Update status if not terminal
+    if status not in _TERMINAL_EDA_JOB_STATUSES and domino_job_id:
         domino_status_result = await launcher.get_job_status(domino_job_id)
         if domino_status_result.get("success"):
             latest_domino_status = domino_status_result.get("domino_job_status")
@@ -557,20 +697,33 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
                 ) or metadata
                 domino_job_status = latest_domino_status
 
-            if latest_domino_status and latest_domino_status.lower() in {
-                "failed",
-                "error",
-                "killed",
-                "stopped",
-                "cancelled",
-            }:
-                error_message = f"Domino profiling job ended with status: {latest_domino_status}"
-                metadata = store.update_request(
-                    request_id,
-                    status="failed",
-                    error=error_message,
-                ) or metadata
-                status = "failed"
+
+            if latest_domino_status:
+                normalized_status = latest_domino_status.lower()
+
+                if normalized_status in _FAILED_TERMINAL_EDA_JOB_STATUSES:
+                    error_message = f"Domino profiling job ended with status: {latest_domino_status}"
+                    metadata = store.update_request(
+                        request_id,
+                        status="failed",
+                        error=error_message,
+                    ) or metadata
+                    status = "failed"
+                else:
+                    # TODO statuses should be consts
+                    # succeeded, update the result state
+                    result = _resolve_eda_job_result(
+                        request_id,
+                        metadata.get("experiment_name"),
+                    )
+                    if result:
+                        store.write_result(request_id, metadata.get("mode", "tabular"), result)
+                        metadata = store.update_request(
+                            request_id,
+                            status="completed",
+                            error=None,
+                        ) or metadata
+                        status = "completed"
 
     if status == "failed":
         return AsyncProfileStatusResponse(
@@ -580,6 +733,17 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
             domino_job_id=metadata.get("domino_job_id"),
             domino_job_status=metadata.get("domino_job_status"),
             error=metadata.get("error") or store.get_error(request_id) or "Async profiling failed",
+        )
+
+    result_payload = store.get_result(request_id)
+    if result_payload:
+        return AsyncProfileStatusResponse(
+            request_id=request_id,
+            status="completed",
+            mode=result_payload.get("mode"),
+            domino_job_id=metadata.get("domino_job_id"),
+            domino_job_status=metadata.get("domino_job_status"),
+            result=result_payload.get("result"),
         )
 
     return AsyncProfileStatusResponse(
@@ -601,5 +765,6 @@ async def get_profile_async_status(request: AsyncProfileStatusRequest):
 @router.get("/profile/async/{request_id}", response_model=AsyncProfileStatusResponse)
 @handle_errors("Async profiling status error")
 async def get_profile_async_status_get(request_id: str):
+    # TODO same as async status
     """GET variant for async EDA status polling."""
     return await _build_async_status_response(request_id)

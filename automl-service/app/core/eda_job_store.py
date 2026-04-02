@@ -51,7 +51,9 @@ class EDAJobStore:
         request_id: str,
         mode: str,
         request_payload: dict[str, Any],
+        experiment_name: str,
     ) -> dict[str, Any]:
+        # TODO would like this to at least use a pydantic model
         meta = {
             "request_id": request_id,
             "status": "pending",
@@ -61,6 +63,7 @@ class EDAJobStore:
             "created_at": _utc_now_iso(),
             "updated_at": _utc_now_iso(),
             "error": None,
+            "experiment_name": experiment_name,
         }
         print("CREATE REQUEST", self._meta_path(request_id), meta)
         # TODO do we write the state of the job to the file system because we
