@@ -224,6 +224,8 @@ export interface TimeSeriesProfile {
 }
 
 export interface AsyncProfileStartRequest {
+  job_id: string
+  force_restart?: boolean
   mode: 'tabular' | 'timeseries'
   dataset_id: string
   file_path: string

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import String, Text, DateTime, Integer, Float, JSON, Enum as SQLEnum
+from sqlalchemy import String, Text, DateTime, Integer, Float, JSON, Enum as SQLEnum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.utils import utc_now
@@ -114,8 +114,10 @@ class EDAJob(Base):
     """Persisted async EDA request metadata and results."""
 
     __tablename__ = "eda_jobs"
+    __table_args__ = (UniqueConstraint('job_id', 'mode', name='uq_eda_jobs_job_mode'),)
 
     request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('jobs.id', ondelete='CASCADE'), nullable=True, index=True)
     mode: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
     request_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)

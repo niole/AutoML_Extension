@@ -2,7 +2,7 @@
 
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.core.utils import utc_now
 from app.db.models import EDAJob
@@ -16,6 +16,7 @@ class EDAJobStore:
     def _serialize_request(record: EDAJob) -> dict[str, Any]:
         return {
             "request_id": record.request_id,
+            "job_id": record.job_id,
             "status": record.status,
             "mode": record.mode,
             "request": record.request_payload,
@@ -48,9 +49,27 @@ class EDAJobStore:
             )
             return result.scalar_one_or_none()
 
+    async def get_by_job(self, job_id: str, mode: str) -> Optional[dict[str, Any]]:
+        async with get_db_session() as db:
+            result = await db.execute(
+                select(EDAJob).where(EDAJob.job_id == job_id, EDAJob.mode == mode)
+            )
+            record = result.scalar_one_or_none()
+            if record is None:
+                return None
+            return self._serialize_request(record)
+
+    async def delete_by_job(self, job_id: str, mode: str) -> None:
+        async with get_db_session() as db:
+            await db.execute(
+                delete(EDAJob).where(EDAJob.job_id == job_id, EDAJob.mode == mode)
+            )
+            await db.commit()
+
     async def create_request(
         self,
         request_id: str,
+        job_id: str,
         mode: str,
         request_payload: dict[str, Any],
         experiment_name: str,
@@ -58,6 +77,7 @@ class EDAJobStore:
         now = utc_now()
         record = EDAJob(
             request_id=request_id,
+            job_id=job_id,
             status="pending",
             mode=mode,
             request_payload=request_payload,

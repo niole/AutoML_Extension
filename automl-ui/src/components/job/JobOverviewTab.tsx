@@ -210,6 +210,7 @@ function getDatasetLabel(job: Job | undefined, isLoading: boolean): string {
 function getDatasetLink(job: Job | undefined): string | null {
   if (!job) return null
   const params = new URLSearchParams()
+  params.set('job_id', job.id)
   if (job.data_source) params.set('data_source', job.data_source)
   if (job.dataset_id) params.set('dataset_id', job.dataset_id)
   if (job.file_path) params.set('file_path', job.file_path)

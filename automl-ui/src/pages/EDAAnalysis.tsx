@@ -164,7 +164,7 @@ function EDAAnalysis() {
     setIdColumn(id)
     setRollingWindow(rw)
     if (edaExecutionTarget === 'domino_job') {
-      void startAsyncTimeSeriesProfiling(selectedFilePath, tc, tgt, id, size, strategy, rw)
+      void startAsyncTimeSeriesProfiling(selectedFilePath, tc, tgt, id, size, strategy, rw, true)
       return
     }
     void profileTimeSeries({
@@ -186,7 +186,7 @@ function EDAAnalysis() {
     setStratifyColumn(stratifyCol)
     if (selectedFilePath) {
       if (edaExecutionTarget === 'domino_job') {
-        void startAsyncTabularProfiling(selectedFilePath, size, strategy, stratifyCol || undefined)
+        void startAsyncTabularProfiling(selectedFilePath, size, strategy, stratifyCol || undefined, true)
       } else {
         void profileFile(selectedFilePath, size, strategy, stratifyCol || undefined)
       }

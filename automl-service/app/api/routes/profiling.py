@@ -410,6 +410,8 @@ class TimeSeriesProfileResponse(BaseModel):
 class AsyncProfileStartRequest(BaseModel):
     """Request to start async EDA profiling in a Domino Job."""
 
+    job_id: str = Field(..., description="Training job ID this EDA is associated with")
+    force_restart: bool = Field(False, description="If True, discard any existing result and launch a new Domino job")
     mode: Literal["tabular", "timeseries"] = Field("tabular")
     dataset_id: str = Field(..., description="Optional dataset ID, needed for Domino Jobs")
     file_path: str = Field(..., description="Path to the data file")
@@ -513,11 +515,24 @@ async def start_profile_async(request: AsyncProfileStartRequest, projectId: Opti
             )
 
     store = get_eda_job_store()
+
+    if not request.force_restart:
+        existing = await store.get_by_job(request.job_id, request.mode)
+        if existing and existing["status"] in ("pending", "running", "completed"):
+            return AsyncProfileStartResponse(
+                request_id=existing["request_id"],
+                status=existing["status"],
+                mode=request.mode,
+                domino_job_id=existing.get("domino_job_id"),
+                domino_job_status=existing.get("domino_job_status"),
+                domino_job_url=existing.get("domino_job_url"),
+            )
+
+    await store.delete_by_job(request.job_id, request.mode)
+
     settings = get_settings()
     request_id = str(uuid4())
     experiment_name = "eda_job_results_" + str(uuid4())
-
-    # TODO do we also want to add the job queue thing here?
 
     dataset_id = request.dataset_id
     dataset_manager = get_dataset_manager()
@@ -531,6 +546,7 @@ async def start_profile_async(request: AsyncProfileStartRequest, projectId: Opti
 
     await store.create_request(
         request_id=request_id,
+        job_id=request.job_id,
         mode=request.mode,
         request_payload=request.model_dump(exclude_none=True),
         experiment_name=experiment_name,

@@ -30,6 +30,7 @@ async def test_eda_job_store_persists_to_database(async_engine, monkeypatch):
 
     await store.create_request(
         request_id="eda-req-1",
+        job_id="job-1",
         mode="tabular",
         request_payload={"dataset_id": "dataset-1", "file_path": "train.csv"},
         experiment_name="eda-exp-1",

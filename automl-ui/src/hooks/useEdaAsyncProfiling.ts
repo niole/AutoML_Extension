@@ -31,6 +31,7 @@ interface UseEdaAsyncProfilingResult {
     sampleSize: number,
     samplingStrategy: string,
     stratifyColumn?: string,
+    forceRestart?: boolean,
   ) => Promise<void>
   startAsyncTimeSeriesProfiling: (
     filePath: string,
@@ -40,6 +41,7 @@ interface UseEdaAsyncProfilingResult {
     sampleSize: number,
     samplingStrategy: string,
     rollingWindow: string,
+    forceRestart?: boolean,
   ) => Promise<void>
 }
 
@@ -69,17 +71,24 @@ export function useEdaAsyncProfiling({
     sampleSize: number,
     samplingStrategy: string,
     stratifyColumn?: string,
+    forceRestart?: boolean,
   ) => {
     setAsyncProfileStatus('starting')
     setAsyncProfileError(null)
     setAsyncRequestId(null)
     try {
+      const jobId = searchParams.get('job_id');
       const datasetId = searchParams.get('dataset_id');
+      if (!jobId) {
+        throw new Error("job_id must exist in query parameters in order to start async tabular profiling")
+      }
       if (!datasetId) {
-        throw new Error("Dataset id must exist in query parameters in order to start async tabular profiling")
+        throw new Error("dataset_id must exist in query parameters in order to start async tabular profiling")
       }
 
       const response = await startAsyncProfile({
+        job_id: jobId,
+        force_restart: forceRestart,
         mode: 'tabular',
         dataset_id: datasetId,
         file_path: filePath,
@@ -106,16 +115,23 @@ export function useEdaAsyncProfiling({
     sampleSize: number,
     samplingStrategy: string,
     rollingWindow: string,
+    forceRestart?: boolean,
   ) => {
     setAsyncProfileStatus('starting')
     setAsyncProfileError(null)
     setAsyncRequestId(null)
     try {
+      const jobId = searchParams.get('job_id');
       const datasetId = searchParams.get('dataset_id');
+      if (!jobId) {
+        throw new Error("job_id must exist in query parameters in order to start async timeseries profiling")
+      }
       if (!datasetId) {
-        throw new Error("Dataset id must exist in query parameters in order to start async timeseries profiling")
+        throw new Error("dataset_id must exist in query parameters in order to start async timeseries profiling")
       }
       const response = await startAsyncProfile({
+        job_id: jobId,
+        force_restart: forceRestart,
         mode: 'timeseries',
         dataset_id: datasetId,
         file_path: filePath,

@@ -4,12 +4,18 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
+from unittest.mock import AsyncMock, MagicMock
 
 import mlflow
 import pytest
 from fastapi import HTTPException
 
-from app.api.routes.profiling import _build_async_status_response, _resolve_eda_job_result
+from app.api.routes.profiling import (
+    AsyncProfileStartRequest,
+    _build_async_status_response,
+    _resolve_eda_job_result,
+    start_profile_async,
+)
 from app.core.eda_job_metadata import EDA_JOB_REQUEST_ID_TAG, EDA_JOB_RESULT_ARTIFACT_PATH
 
 
@@ -376,3 +382,167 @@ async def test_build_async_status_response_requires_experiment_name(monkeypatch)
     )
     assert not resolve_called
     assert store.writes == []
+
+
+# ---------------------------------------------------------------------------
+# start_profile_async — idempotency and force_restart behaviour
+# ---------------------------------------------------------------------------
+
+
+class DummyStartStore:
+    """Minimal store stub for start_profile_async tests."""
+
+    def __init__(self, existing: Optional[dict[str, Any]] = None):
+        self._existing = existing
+        self.deleted: list[tuple[str, str]] = []
+        self.created: list[dict[str, Any]] = []
+        self.update_calls: list[dict[str, Any]] = []
+
+    async def get_by_job(self, job_id: str, mode: str) -> Optional[dict[str, Any]]:
+        return dict(self._existing) if self._existing is not None else None
+
+    async def delete_by_job(self, job_id: str, mode: str) -> None:
+        self.deleted.append((job_id, mode))
+
+    async def create_request(self, **kwargs: Any) -> dict[str, Any]:
+        self.created.append(kwargs)
+        return {"request_id": kwargs["request_id"], "status": "pending", **kwargs}
+
+    async def update_request(self, request_id: str, **updates: Any) -> dict[str, Any]:
+        self.update_calls.append({"request_id": request_id, **updates})
+        return {}
+
+
+def _patch_start_infra(monkeypatch, store: DummyStartStore, launch_result: Optional[dict] = None) -> None:
+    monkeypatch.setattr("app.api.routes.profiling.require_domino_job_start", lambda **_: None)
+    monkeypatch.setattr("app.api.routes.profiling.get_eda_job_store", lambda: store)
+    monkeypatch.setattr(
+        "app.api.routes.profiling.get_dataset_manager",
+        lambda: MagicMock(get_dataset_path=AsyncMock(return_value="/domino/datasets/ds-123")),
+    )
+    if launch_result is not None:
+        launcher = MagicMock(start_eda_job=AsyncMock(return_value=launch_result))
+        monkeypatch.setattr("app.api.routes.profiling.get_domino_job_launcher", lambda: launcher)
+
+
+def _tabular_request(**overrides: Any) -> AsyncProfileStartRequest:
+    return AsyncProfileStartRequest(
+        job_id="job-abc",
+        mode="tabular",
+        dataset_id="ds-123",
+        file_path="train.csv",
+        **overrides,
+    )
+
+
+@pytest.mark.asyncio
+async def test_start_async_returns_completed_result_without_launching(monkeypatch):
+    existing = {
+        "request_id": "req-existing",
+        "job_id": "job-abc",
+        "status": "completed",
+        "mode": "tabular",
+        "domino_job_id": "dj-1",
+        "domino_job_status": "Succeeded",
+        "domino_job_url": None,
+    }
+    store = DummyStartStore(existing=existing)
+    _patch_start_infra(monkeypatch, store)
+
+    response = await start_profile_async(_tabular_request())
+
+    assert response.request_id == "req-existing"
+    assert response.status == "completed"
+    assert store.deleted == []
+    assert store.created == []
+
+
+@pytest.mark.asyncio
+async def test_start_async_returns_running_job_without_launching(monkeypatch):
+    existing = {
+        "request_id": "req-running",
+        "job_id": "job-abc",
+        "status": "running",
+        "mode": "tabular",
+        "domino_job_id": "dj-2",
+        "domino_job_status": "Running",
+        "domino_job_url": "http://domino/job/dj-2",
+    }
+    store = DummyStartStore(existing=existing)
+    _patch_start_infra(monkeypatch, store)
+
+    response = await start_profile_async(_tabular_request())
+
+    assert response.request_id == "req-running"
+    assert response.status == "running"
+    assert response.domino_job_id == "dj-2"
+    assert store.deleted == []
+    assert store.created == []
+
+
+@pytest.mark.asyncio
+async def test_start_async_launches_new_job_when_none_exists(monkeypatch):
+    store = DummyStartStore(existing=None)
+    _patch_start_infra(
+        monkeypatch,
+        store,
+        launch_result={"success": True, "domino_job_id": "dj-new", "domino_job_status": "Submitted"},
+    )
+
+    response = await start_profile_async(_tabular_request())
+
+    assert response.status in ("pending", "running")
+    assert response.domino_job_id == "dj-new"
+    assert store.deleted == [("job-abc", "tabular")]
+    assert len(store.created) == 1
+    assert store.created[0]["job_id"] == "job-abc"
+
+
+@pytest.mark.asyncio
+async def test_start_async_force_restart_replaces_completed_job(monkeypatch):
+    existing = {
+        "request_id": "req-old",
+        "job_id": "job-abc",
+        "status": "completed",
+        "mode": "tabular",
+        "domino_job_id": "dj-old",
+        "domino_job_status": "Succeeded",
+        "domino_job_url": None,
+    }
+    store = DummyStartStore(existing=existing)
+    _patch_start_infra(
+        monkeypatch,
+        store,
+        launch_result={"success": True, "domino_job_id": "dj-fresh", "domino_job_status": "Submitted"},
+    )
+
+    response = await start_profile_async(_tabular_request(force_restart=True))
+
+    assert response.domino_job_id == "dj-fresh"
+    assert store.deleted == [("job-abc", "tabular")]
+    assert len(store.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_start_async_relaunches_when_existing_failed(monkeypatch):
+    existing = {
+        "request_id": "req-failed",
+        "job_id": "job-abc",
+        "status": "failed",
+        "mode": "tabular",
+        "domino_job_id": "dj-failed",
+        "domino_job_status": "Failed",
+        "domino_job_url": None,
+    }
+    store = DummyStartStore(existing=existing)
+    _patch_start_infra(
+        monkeypatch,
+        store,
+        launch_result={"success": True, "domino_job_id": "dj-retry", "domino_job_status": "Submitted"},
+    )
+
+    response = await start_profile_async(_tabular_request())
+
+    assert response.domino_job_id == "dj-retry"
+    assert store.deleted == [("job-abc", "tabular")]
+    assert len(store.created) == 1
