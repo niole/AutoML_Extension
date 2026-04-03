@@ -14,6 +14,7 @@ import type {
   MetricsByProblemType,
   PresetsByModelType,
   TimeSeriesProfile,
+  TimeSeriesProfileRequest,
 } from '../types/profiling'
 
 interface UseProfilingResult {
@@ -34,7 +35,7 @@ interface UseProfilingResult {
   profileColumn: (filePath: string, columnName: string) => Promise<ColumnProfile | null>
   fetchMetrics: () => Promise<MetricsByProblemType | null>
   fetchPresets: () => Promise<PresetsByModelType | null>
-  profileTimeSeries: (request: AsyncProfileStartRequest) => Promise<TimeSeriesProfile | null>
+  profileTimeSeries: (request: TimeSeriesProfileRequest) => Promise<TimeSeriesProfile | null>
   startAsyncProfile: (request: AsyncProfileStartRequest) => Promise<AsyncProfileStartResponse>
   getAsyncProfileStatus: (requestId: string) => Promise<AsyncProfileStatusResponse>
   setProfileData: (value: DataProfile | null) => void
@@ -103,7 +104,7 @@ export function useProfiling(): UseProfilingResult {
   )
 
   const tsProfileState = useApiState(
-    async (request: AsyncProfileStartRequest) => {
+    async (request: TimeSeriesProfileRequest) => {
       const { data } = await api.post<TimeSeriesProfile>('profiling/profile/timeseries', request)
       return data
     },
