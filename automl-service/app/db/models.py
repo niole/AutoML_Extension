@@ -1,12 +1,12 @@
 """SQLAlchemy ORM models for the AutoML service."""
 
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import String, Text, DateTime, Integer, Float, JSON, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
-import enum
 
 from app.core.utils import utc_now
 from app.db.database import Base
@@ -107,6 +107,26 @@ class Job(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class EDAJob(Base):
+    """Persisted async EDA request metadata and results."""
+
+    __tablename__ = "eda_jobs"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
+    request_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    domino_job_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    domino_job_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    domino_job_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    experiment_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    result_payload: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 

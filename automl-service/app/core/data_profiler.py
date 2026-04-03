@@ -1,6 +1,5 @@
 """Data profiling service for analyzing datasets before training."""
 
-from io import BytesIO
 import logging
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -8,12 +7,13 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
 
+from app.core.base_profiler import BaseProfiler
 from app.services import dataset_file_bytes
 
 logger = logging.getLogger(__name__)
 
 
-class DataProfiler:
+class DataProfiler(BaseProfiler):
     """Service for profiling and analyzing datasets."""
 
     def __init__(self):
@@ -31,36 +31,9 @@ class DataProfiler:
         df = await self._load_dataframe(file_path=file_path, dataset_id=dataset_id)
         return self.profile_dataframe(df, sample_size, sampling_strategy, stratify_column)
 
-    async def _load_dataframe(
-        self,
-        file_path: str,
-        dataset_id: Optional[str] = None,
-    ) -> pd.DataFrame:
-        """Load a supported tabular file from a dataset or local filesystem."""
-        content: str | BytesIO = file_path
-        normalized_file_path = file_path.lower()
-
-        if dataset_id:
-            file_bytes = await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
-            content = BytesIO(file_bytes)
-
-        try:
-            # TODO should share with the other profiler, so that the supported
-            # file types are stored in 1 place
-            if normalized_file_path.endswith(".csv"):
-                df = pd.read_csv(content)
-            elif normalized_file_path.endswith((".parquet", ".pq")):
-                df = pd.read_parquet(content)
-            elif normalized_file_path.endswith(".json"):
-                df = pd.read_json(content)
-            elif normalized_file_path.endswith((".xlsx", ".xls")):
-                df = pd.read_excel(content)
-            else:
-                raise ValueError(f"Unsupported file format: {file_path}")
-        except FileNotFoundError as exc:
-            raise FileNotFoundError(f"File not found: {file_path}") from exc
-
-        return df
+    async def _fetch_file_bytes(self, dataset_id: str, file_path: str) -> bytes:
+        """Fetch file bytes from the Domino dataset API."""
+        return await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
 
     def profile_dataframe(
         self,

@@ -46,49 +46,40 @@ async def main() -> None:
     from app.core.eda_job_metadata import (
         EDA_JOB_REQUEST_ID_TAG,
         EDA_JOB_RESULT_ARTIFACT_PATH,
-        EDA_JOB_SOURCE_TAG,
-        EDA_JOB_SOURCE_VALUE,
     )
     import mlflow
 
-    try:
-        if args.mode == "tabular":
-            result = await get_data_profiler().profile_file(
-                file_path=args.file_path,
-                sample_size=args.sample_size,
-                sampling_strategy=args.sampling_strategy,
-                stratify_column=args.stratify_column,
-            )
-        else:
-            if not args.time_column or not args.target_column:
-                raise ValueError("time_column and target_column are required for timeseries profiling")
-            result = await get_ts_profiler().profile_timeseries_file(
-                file_path=args.file_path,
-                time_column=args.time_column,
-                target_column=args.target_column,
-                id_column=args.id_column,
-                sample_size=args.sample_size,
-                sampling_strategy=args.sampling_strategy,
-                rolling_window=args.rolling_window,
-            )
+    if args.mode == "tabular":
+        result = await get_data_profiler().profile_file(
+            file_path=args.file_path,
+            sample_size=args.sample_size,
+            sampling_strategy=args.sampling_strategy,
+            stratify_column=args.stratify_column,
+        )
+    else:
+        if not args.time_column or not args.target_column:
+            raise ValueError("time_column and target_column are required for timeseries profiling")
+        result = await get_ts_profiler().profile_timeseries_file(
+            file_path=args.file_path,
+            time_column=args.time_column,
+            target_column=args.target_column,
+            id_column=args.id_column,
+            sample_size=args.sample_size,
+            sampling_strategy=args.sampling_strategy,
+            rolling_window=args.rolling_window,
+        )
 
-        # write result to an experiment
-        mlflow.set_experiment(args.experiment_name)
-        run_tags = {
-            EDA_JOB_REQUEST_ID_TAG: args.request_id,
-            EDA_JOB_SOURCE_TAG: EDA_JOB_SOURCE_VALUE,
-            "mode": args.mode,
-        }
-        with mlflow.start_run(run_name=f"eda_{args.request_id[:8]}", tags=run_tags):
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir) / EDA_JOB_RESULT_ARTIFACT_PATH
-                with temp_path.open("w", encoding="utf-8") as f:
-                    json.dump(result, f, indent=2, default=str)
-                mlflow.log_artifact(str(temp_path), artifact_path=None)
-
-    except Exception as e:
-        error_message = str(e)
-        raise
+    # write result to an experiment
+    mlflow.set_experiment(args.experiment_name)
+    run_tags = {
+        EDA_JOB_REQUEST_ID_TAG: args.request_id,
+    }
+    with mlflow.start_run(run_name=f"eda_{args.request_id[:8]}", tags=run_tags):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir) / EDA_JOB_RESULT_ARTIFACT_PATH
+            with temp_path.open("w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2, default=str)
+            mlflow.log_artifact(str(temp_path), artifact_path=None)
 
 
 if __name__ == "__main__":

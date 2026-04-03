@@ -1,19 +1,19 @@
 """Time series profiling service for analyzing temporal datasets."""
 
 import logging
-from io import BytesIO
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
-
-from app.services import dataset_file_bytes
 
 import numpy as np
 import pandas as pd
 
+from app.core.base_profiler import BaseProfiler
+from app.services import dataset_file_bytes
+
 logger = logging.getLogger(__name__)
 
 
-class TimeSeriesProfiler:
+class TimeSeriesProfiler(BaseProfiler):
     """Service for profiling time series datasets."""
 
     def __init__(self):
@@ -33,8 +33,8 @@ class TimeSeriesProfiler:
         """Generate a comprehensive time series profile."""
         df = await self._load_dataframe(
             file_path=file_path,
-            time_column=time_column,
             dataset_id=dataset_id,
+            parse_dates=[time_column],
         )
 
         # Ensure time column is datetime
@@ -81,35 +81,9 @@ class TimeSeriesProfiler:
 
         return result
 
-    async def _load_dataframe(
-        self,
-        file_path: str,
-        time_column: str,
-        dataset_id: Optional[str] = None,
-    ) -> pd.DataFrame:
-        """Load a supported time series file from a dataset or local filesystem."""
-        content: str | BytesIO = file_path
-        normalized_file_path = file_path.lower()
-
-        if dataset_id:
-            file_bytes = await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
-            content = BytesIO(file_bytes)
-
-        try:
-            if normalized_file_path.endswith(".csv"):
-                df = pd.read_csv(content, parse_dates=[time_column])
-            elif normalized_file_path.endswith((".parquet", ".pq")):
-                df = pd.read_parquet(content)
-            elif normalized_file_path.endswith(".json"):
-                df = pd.read_json(content)
-            elif normalized_file_path.endswith((".xlsx", ".xls")):
-                df = pd.read_excel(content, parse_dates=[time_column])
-            else:
-                raise ValueError(f"Unsupported file format: {file_path}")
-        except FileNotFoundError as exc:
-            raise FileNotFoundError(f"File not found: {file_path}") from exc
-
-        return df
+    async def _fetch_file_bytes(self, dataset_id: str, file_path: str) -> bytes:
+        """Fetch file bytes from the Domino dataset API."""
+        return await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
 
     def _apply_sampling(
         self, df: pd.DataFrame, sample_size: int, strategy: str

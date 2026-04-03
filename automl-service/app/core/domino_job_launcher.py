@@ -27,7 +27,8 @@ class DominoJobLauncher:
 
     _RUNNER_BASE = "/home/ubuntu/AutoML_Extension/automl-service/app/workers"
     TRAINING_RUNNER_PATH = f"{_RUNNER_BASE}/domino_training_runner.py"
-    EDA_RUNNER_PATH = "automl-service/app/workers/domino_eda_runner.py" # TODO remove f"{_RUNNER_BASE}/domino_eda_runner.py"
+    #EDA_RUNNER_PATH = f"{_RUNNER_BASE}/domino_eda_runner.py"
+    EDA_RUNNER_PATH = f"automl-service/app/workers/domino_eda_runner.py"
 
     def __init__(self):
         self.settings = get_settings()
@@ -254,8 +255,6 @@ class DominoJobLauncher:
         project_id: str,
     ) -> dict[str, Any]:
         """Launch a Domino job while pinning to the current commit and environment revision."""
-        #project_id = project_id or resolve_domino_project_id()
-
         # Resolve hardware tier name → ID (the SDK did this internally).
         hardware_tier_id = None
         if hardware_tier_name:

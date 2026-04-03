@@ -34,6 +34,8 @@ async_session_maker = async_sessionmaker(
 
 async def create_tables():
     """Create all database tables."""
+    from app.db import models  # noqa: F401
+
     try:
         async with engine.begin() as conn:
             # checkfirst=True is default but be explicit for multi-worker safety
