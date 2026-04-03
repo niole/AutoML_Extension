@@ -27,12 +27,12 @@ class TestJobCreateRequest:
         req = JobCreateRequest(
             name="my-job",
             model_type="tabular",
-            data_source="upload",
+            data_source="domino_dataset",
             target_column="target",
         )
         assert req.name == "my-job"
         assert req.model_type == "tabular"
-        assert req.data_source == "upload"
+        assert req.data_source == "domino_dataset"
         assert req.target_column == "target"
         assert req.preset == "medium_quality_faster_train"  # default
         assert req.time_limit == 3600  # default
@@ -45,7 +45,8 @@ class TestJobCreateRequest:
             description="A full test",
             model_type="tabular",
             problem_type="binary",
-            data_source="mounted",
+            data_source="domino_dataset",
+            dataset_id="ds-test-123",
             file_path="/data/train.csv",
             target_column="label",
             feature_columns=["age", "income"],
@@ -68,7 +69,7 @@ class TestJobCreateRequest:
         req = JobCreateRequest(
             name="ts-job",
             model_type="timeseries",
-            data_source="upload",
+            data_source="domino_dataset",
             target_column="value",
             time_column="timestamp",
             id_column="item_id",
@@ -84,7 +85,7 @@ class TestJobCreateRequest:
         req = JobCreateRequest(
             name="ts-no-time",
             model_type="timeseries",
-            data_source="upload",
+            data_source="domino_dataset",
             target_column="value",
         )
         assert req.time_column is None
@@ -94,7 +95,7 @@ class TestJobCreateRequest:
         with pytest.raises(ValidationError) as exc_info:
             JobCreateRequest(
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
             )
         errors = exc_info.value.errors()
@@ -105,7 +106,7 @@ class TestJobCreateRequest:
         with pytest.raises(ValidationError) as exc_info:
             JobCreateRequest(
                 name="test",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
             )
         errors = exc_info.value.errors()
@@ -128,7 +129,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="test",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
             )
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("target_column",) for e in errors)
@@ -139,7 +140,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="test",
                 model_type="image",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
             )
 
@@ -159,7 +160,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="test",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
                 preset="ultra_quality",
             )
@@ -170,7 +171,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
             )
 
@@ -180,7 +181,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="x" * 256,
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
             )
 
@@ -190,7 +191,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="test",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
                 time_limit=30,
             )
@@ -201,7 +202,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="ts-test",
                 model_type="timeseries",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="value",
                 prediction_length=0,
             )
@@ -224,7 +225,7 @@ class TestJobCreateRequest:
             req = JobCreateRequest(
                 name="test",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
                 preset=preset,
             )
@@ -236,7 +237,7 @@ class TestJobCreateRequest:
             req = JobCreateRequest(
                 name="test",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
                 problem_type=pt,
             )
@@ -247,7 +248,7 @@ class TestJobCreateRequest:
             JobCreateRequest(
                 name="test",
                 model_type="tabular",
-                data_source="upload",
+                data_source="domino_dataset",
                 target_column="target",
                 problem_type="clustering",
             )
