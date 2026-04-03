@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from app.core.data_profiler import get_data_profiler, DataProfiler
-from app.core.domino_job_launcher import get_domino_job_launcher
+from app.core.domino_job_launcher import DominoJobLauncher, get_domino_job_launcher
 from app.core.eda_job_metadata import (
     EDA_JOB_REQUEST_ID_TAG,
     EDA_JOB_RESULT_ARTIFACT_PATH,
@@ -27,15 +27,6 @@ from app.services.dataset_service import get_dataset_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-_FAILED_TERMINAL_DOMINO_JOB_STATUSES = {
-    "Failed",
-    "Error",
-}
-_SUCCESSFUL_TERMINAL_DOMINO_JOB_STATUSES = {
-    "Stopped",
-    "Succeeded",
-}
 
 _FAILED_TERMINAL_EDA_JOB_STATUSES = {
     "failed",
@@ -706,7 +697,7 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
                 ) or metadata
                 domino_job_status = latest_domino_status
 
-            if latest_domino_status in _FAILED_TERMINAL_DOMINO_JOB_STATUSES:
+            if DominoJobLauncher.is_failed_status(latest_domino_status) or DominoJobLauncher.is_cancelled_status(latest_domino_status):
                 error_message = f"Domino profiling job ended with status: {latest_domino_status}"
                 new_status = "failed"
                 metadata = await store.update_request(
@@ -715,7 +706,7 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
                     error=error_message,
                 ) or metadata
                 status = new_status
-            elif latest_domino_status in _SUCCESSFUL_TERMINAL_DOMINO_JOB_STATUSES:
+            elif DominoJobLauncher.is_success_status(latest_domino_status):
                 # download the job outputs
                 new_status = "completed"
                 metadata = await store.update_request(

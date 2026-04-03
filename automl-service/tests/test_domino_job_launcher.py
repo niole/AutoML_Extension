@@ -132,3 +132,42 @@ class TestStartEdaJob:
         assert captured["payload"]["projectId"] == PROJECT_ID
         assert result["success"] is True
         assert result["domino_job_id"] == "domino-job-999"
+
+
+# ===========================================================================
+# Status classification static methods
+# ===========================================================================
+
+
+class TestStatusClassification:
+    @pytest.mark.parametrize("status", ["succeeded", "Succeeded", "success", "completed", "done", "finished"])
+    def test_is_success_status(self, status):
+        assert DominoJobLauncher.is_success_status(status) is True
+
+    @pytest.mark.parametrize("status", ["failed", "Failed", "error", "Error"])
+    def test_is_failed_status(self, status):
+        assert DominoJobLauncher.is_failed_status(status) is True
+
+    @pytest.mark.parametrize("status", ["stopped", "Stopped", "cancelled", "canceled", "archived"])
+    def test_is_cancelled_status(self, status):
+        assert DominoJobLauncher.is_cancelled_status(status) is True
+
+    @pytest.mark.parametrize("status", ["succeeded", "failed", "stopped", "cancelled", "error", "done"])
+    def test_is_terminal_status(self, status):
+        assert DominoJobLauncher.is_terminal_status(status) is True
+
+    @pytest.mark.parametrize("status", ["running", "submitted", "queued", "pending", "initializing", None, ""])
+    def test_non_terminal_statuses(self, status):
+        assert DominoJobLauncher.is_terminal_status(status) is False
+
+    @pytest.mark.parametrize("status", ["running", "Running", "executing"])
+    def test_is_running_status(self, status):
+        assert DominoJobLauncher.is_running_status(status) is True
+
+    @pytest.mark.parametrize("status", ["queued", "Queued", "pending", "submitted", "initializing", "provisioning"])
+    def test_is_pending_status(self, status):
+        assert DominoJobLauncher.is_pending_status(status) is True
+
+    def test_stopped_is_not_success(self):
+        assert DominoJobLauncher.is_success_status("Stopped") is False
+        assert DominoJobLauncher.is_success_status("stopped") is False

@@ -24,7 +24,6 @@ from app.services.job_service import (
     _build_domino_job_logs,
     _ensure_mlflow_results,
     _is_domino_missing_error,
-    _is_domino_terminal_status,
     _normalize_job_name,
     _parse_statuses_csv,
     _terminal_status_from_domino,
@@ -477,28 +476,6 @@ class TestTerminalStatusFromDomino:
     def test_whitespace_trimmed(self):
         assert _terminal_status_from_domino("  succeeded  ") == JobStatus.COMPLETED
 
-
-# ===========================================================================
-# _is_domino_terminal_status
-# ===========================================================================
-
-
-class TestIsDominoTerminalStatus:
-    """Tests for _is_domino_terminal_status."""
-
-    @pytest.mark.parametrize(
-        "status",
-        ["succeeded", "failed", "stopped", "cancelled", "error", "done"],
-    )
-    def test_terminal_statuses(self, status):
-        assert _is_domino_terminal_status(status) is True
-
-    @pytest.mark.parametrize(
-        "status",
-        ["running", "submitted", "queued", "pending", "initializing", None, ""],
-    )
-    def test_non_terminal_statuses(self, status):
-        assert _is_domino_terminal_status(status) is False
 
 
 # ===========================================================================

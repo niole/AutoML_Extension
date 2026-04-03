@@ -38,7 +38,7 @@ from app.config import get_settings
 from app.core.authorization import require_storage_modify, require_domino_job_start, require_domino_job_list, current_user_can_modify_storage, require_domino_job_stop
 from app.core.context.user import get_viewing_user
 from app.core.domino_http import get_domino_public_api_client_sync
-from app.core.domino_job_launcher import get_domino_job_launcher
+from app.core.domino_job_launcher import DominoJobLauncher, get_domino_job_launcher
 from app.core.dataset_mounts import resolve_dataset_mount_paths
 from app.core.job_file_cache import download_mlflow_artifact
 from app.db.models import Job, JobLog, JobStatus, ModelType, ProblemType
@@ -50,11 +50,6 @@ from app.workers.training_worker import register_trained_model
 logger = logging.getLogger(__name__)
 
 _TERMINAL_JOB_STATUSES = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
-_DOMINO_PENDING_STATUSES = {"submitted", "queued", "pending", "initializing", "provisioning"}
-_DOMINO_RUNNING_STATUSES = {"running", "executing"}
-_DOMINO_COMPLETED_STATUSES = {"succeeded", "success", "successful", "completed", "complete", "done", "finished"}
-_DOMINO_FAILED_STATUSES = {"failed", "error"}
-_DOMINO_CANCELLED_STATUSES = {"stopped", "cancelled", "canceled", "archived"}
 _DOMINO_TERMINAL_METADATA_SCAN_LIMIT = 100
 _DOMINO_TERMINAL_METADATA_SYNC_LIMIT = 20
 _DOMINO_MISSING_JOB_MESSAGE = "External Domino job is no longer accessible (archived or deleted)."
@@ -649,31 +644,15 @@ async def get_job_or_404(db: AsyncSession, job_id: str, owner_user_name: str) ->
     return job
 
 
-def _normalize_domino_status(status: Optional[str]) -> str:
-    """Normalize external Domino status for matching."""
-    return (status or "").strip().lower()
-
-
 def _terminal_status_from_domino(status: Optional[str]) -> Optional[JobStatus]:
     """Map Domino terminal statuses to local JobStatus values."""
-    normalized = _normalize_domino_status(status)
-    if normalized in _DOMINO_COMPLETED_STATUSES:
+    if DominoJobLauncher.is_success_status(status):
         return JobStatus.COMPLETED
-    if normalized in _DOMINO_FAILED_STATUSES:
+    if DominoJobLauncher.is_failed_status(status):
         return JobStatus.FAILED
-    if normalized in _DOMINO_CANCELLED_STATUSES:
+    if DominoJobLauncher.is_cancelled_status(status):
         return JobStatus.CANCELLED
     return None
-
-
-def _is_domino_terminal_status(status: Optional[str]) -> bool:
-    """Return True if Domino status is already terminal."""
-    normalized = _normalize_domino_status(status)
-    return (
-        normalized in _DOMINO_COMPLETED_STATUSES
-        or normalized in _DOMINO_FAILED_STATUSES
-        or normalized in _DOMINO_CANCELLED_STATUSES
-    )
 
 
 def _is_domino_missing_error(error: Optional[str]) -> bool:
@@ -844,7 +823,7 @@ async def _sync_domino_job_state(
     is_terminal_local = job.status in _TERMINAL_JOB_STATUSES
     if is_terminal_local and not sync_terminal_metadata:
         return job
-    if is_terminal_local and sync_terminal_metadata and _is_domino_terminal_status(job.domino_job_status):
+    if is_terminal_local and sync_terminal_metadata and DominoJobLauncher.is_terminal_status(job.domino_job_status):
         return job
 
     try:
@@ -892,7 +871,6 @@ async def _sync_domino_job_state(
         return job
 
     latest_domino_status = status_result.get("domino_job_status")
-    normalized = _normalize_domino_status(latest_domino_status)
 
     if latest_domino_status and latest_domino_status != job.domino_job_status:
         await crud.update_job_domino_fields(
@@ -907,7 +885,7 @@ async def _sync_domino_job_state(
         return job
 
     # Promote pending -> running based on external execution signal.
-    if normalized in _DOMINO_RUNNING_STATUSES and job.status == JobStatus.PENDING:
+    if DominoJobLauncher.is_running_status(latest_domino_status) and job.status == JobStatus.PENDING:
         updated = await crud.update_job_status(
             db=db,
             job_id=job.id,
@@ -917,7 +895,7 @@ async def _sync_domino_job_state(
         return updated or job
 
     # Keep pending state for queued/submitted external jobs.
-    if normalized in _DOMINO_PENDING_STATUSES:
+    if DominoJobLauncher.is_pending_status(latest_domino_status):
         return job
 
     terminal_status = _terminal_status_from_domino(latest_domino_status)

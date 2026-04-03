@@ -25,6 +25,46 @@ logger = logging.getLogger(__name__)
 class DominoJobLauncher:
     """Wrapper around Domino V4 Jobs REST API."""
 
+    # Domino job status classification sets (case-insensitive after normalisation)
+    _DOMINO_COMPLETED_STATUSES = frozenset({"succeeded", "success", "successful", "completed", "complete", "done", "finished"})
+    _DOMINO_FAILED_STATUSES = frozenset({"failed", "error"})
+    _DOMINO_CANCELLED_STATUSES = frozenset({"stopped", "cancelled", "canceled", "archived"})
+    _DOMINO_RUNNING_STATUSES = frozenset({"running", "executing"})
+    _DOMINO_PENDING_STATUSES = frozenset({"submitted", "queued", "pending", "initializing", "provisioning"})
+
+    @staticmethod
+    def _normalize_status(status: Optional[str]) -> str:
+        return (status or "").strip().lower()
+
+    @staticmethod
+    def is_success_status(status: Optional[str]) -> bool:
+        return DominoJobLauncher._normalize_status(status) in DominoJobLauncher._DOMINO_COMPLETED_STATUSES
+
+    @staticmethod
+    def is_failed_status(status: Optional[str]) -> bool:
+        return DominoJobLauncher._normalize_status(status) in DominoJobLauncher._DOMINO_FAILED_STATUSES
+
+    @staticmethod
+    def is_cancelled_status(status: Optional[str]) -> bool:
+        return DominoJobLauncher._normalize_status(status) in DominoJobLauncher._DOMINO_CANCELLED_STATUSES
+
+    @staticmethod
+    def is_terminal_status(status: Optional[str]) -> bool:
+        normalized = DominoJobLauncher._normalize_status(status)
+        return (
+            normalized in DominoJobLauncher._DOMINO_COMPLETED_STATUSES
+            or normalized in DominoJobLauncher._DOMINO_FAILED_STATUSES
+            or normalized in DominoJobLauncher._DOMINO_CANCELLED_STATUSES
+        )
+
+    @staticmethod
+    def is_running_status(status: Optional[str]) -> bool:
+        return DominoJobLauncher._normalize_status(status) in DominoJobLauncher._DOMINO_RUNNING_STATUSES
+
+    @staticmethod
+    def is_pending_status(status: Optional[str]) -> bool:
+        return DominoJobLauncher._normalize_status(status) in DominoJobLauncher._DOMINO_PENDING_STATUSES
+
     _RUNNER_BASE = "/home/ubuntu/AutoML_Extension/automl-service/app/workers"
     TRAINING_RUNNER_PATH = f"{_RUNNER_BASE}/domino_training_runner.py"
     EDA_RUNNER_PATH = f"{_RUNNER_BASE}/domino_eda_runner.py"
