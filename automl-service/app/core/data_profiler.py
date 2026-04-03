@@ -1,22 +1,19 @@
 """Data profiling service for analyzing datasets before training."""
 
-import os
-from io import BytesIO
 import logging
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple
-from pathlib import Path
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import numpy as np
 
+from app.core.base_profiler import BaseProfiler
 from app.services import dataset_file_bytes
 
 logger = logging.getLogger(__name__)
 
 
-class DataProfiler:
+class DataProfiler(BaseProfiler):
     """Service for profiling and analyzing datasets."""
 
     def __init__(self):
@@ -24,30 +21,19 @@ class DataProfiler:
 
     async def profile_file(
         self,
-        dataset_id: str,
         file_path: str,
+        dataset_id: Optional[str] = None,
         sample_size: int = 50000,
         sampling_strategy: str = "random",
         stratify_column: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a comprehensive profile of a data file."""
-
-        file_bytes = await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
-        content = BytesIO(file_bytes)
-
-        # Load data
-        if file_path.endswith(".csv"):
-            df = pd.read_csv(content)
-        elif file_path.endswith((".parquet", ".pq")):
-            df = pd.read_parquet(content)
-        elif file_path.endswith(".json"):
-            df = pd.read_json(content)
-        elif file_path.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(content)
-        else:
-            raise ValueError(f"Unsupported file format: {file_path}")
-
+        df = await self._load_dataframe(file_path=file_path, dataset_id=dataset_id)
         return self.profile_dataframe(df, sample_size, sampling_strategy, stratify_column)
+
+    async def _fetch_file_bytes(self, dataset_id: str, file_path: str) -> bytes:
+        """Fetch file bytes from the Domino dataset API."""
+        return await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
 
     def profile_dataframe(
         self,

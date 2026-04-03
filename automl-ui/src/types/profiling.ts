@@ -223,8 +223,23 @@ export interface TimeSeriesProfile {
   warnings: DataWarning[]
 }
 
+export interface TimeSeriesProfileRequest {
+  mode: 'timeseries'
+  dataset_id?: string
+  file_path: string
+  sample_size?: number
+  sampling_strategy?: string
+  time_column?: string
+  target_column?: string
+  id_column?: string
+  rolling_window?: number
+}
+
 export interface AsyncProfileStartRequest {
+  job_id: string
+  force_restart?: boolean
   mode: 'tabular' | 'timeseries'
+  dataset_id: string
   file_path: string
   sample_size?: number
   sampling_strategy?: string

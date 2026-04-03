@@ -64,8 +64,5 @@ Thumbs.db
 # Archives
 *.zip
 
-# Agent context
-AGENTS.md
-
 # Api client generation
 automl-service/app/api/downloaded_openapi_specs

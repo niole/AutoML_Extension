@@ -1,47 +1,41 @@
 """Time series profiling service for analyzing temporal datasets."""
 
 import logging
-import os
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
+from app.core.base_profiler import BaseProfiler
+from app.services import dataset_file_bytes
+
 logger = logging.getLogger(__name__)
 
 
-class TimeSeriesProfiler:
+class TimeSeriesProfiler(BaseProfiler):
     """Service for profiling time series datasets."""
 
     def __init__(self):
         pass
 
-    def profile_timeseries_file(
+    async def profile_timeseries_file(
         self,
         file_path: str,
         time_column: str,
         target_column: str,
+        dataset_id: Optional[str] = None,
         id_column: Optional[str] = None,
         sample_size: int = 100000,
         sampling_strategy: str = "recent",
         rolling_window: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Generate a comprehensive time series profile."""
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        # Load data
-        if file_path.endswith(".csv"):
-            df = pd.read_csv(file_path, parse_dates=[time_column])
-        elif file_path.endswith((".parquet", ".pq")):
-            df = pd.read_parquet(file_path)
-        elif file_path.endswith(".json"):
-            df = pd.read_json(file_path)
-        elif file_path.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(file_path, parse_dates=[time_column])
-        else:
-            raise ValueError(f"Unsupported file format: {file_path}")
+        df = await self._load_dataframe(
+            file_path=file_path,
+            dataset_id=dataset_id,
+            parse_dates=[time_column],
+        )
 
         # Ensure time column is datetime
         if not pd.api.types.is_datetime64_any_dtype(df[time_column]):
@@ -86,6 +80,10 @@ class TimeSeriesProfiler:
         result["warnings"] = self._generate_warnings(result, total_rows, len(df))
 
         return result
+
+    async def _fetch_file_bytes(self, dataset_id: str, file_path: str) -> bytes:
+        """Fetch file bytes from the Domino dataset API."""
+        return await dataset_file_bytes.fetch(dataset_id=dataset_id, file_path=file_path)
 
     def _apply_sampling(
         self, df: pd.DataFrame, sample_size: int, strategy: str

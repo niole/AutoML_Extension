@@ -124,6 +124,7 @@ def resolve_domino_project_id() -> str:
     Raises ValueError when no project ID is available.
     """
     settings = get_settings()
+	# TODO DELETE THIS
     project_id = settings.domino_project_id or os.environ.get("DOMINO_PROJECT_ID")
     if not project_id:
         raise ValueError(

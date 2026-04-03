@@ -1,6 +1,11 @@
 """Data profiling endpoints."""
 
+import json
 import logging
+import os
+import tempfile
+import mlflow
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
@@ -8,19 +13,39 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from app.core.data_profiler import get_data_profiler, DataProfiler
-from app.core.domino_job_launcher import get_domino_job_launcher
+from app.core.domino_job_launcher import DominoJobLauncher, get_domino_job_launcher
+from app.core.eda_job_metadata import (
+    EDA_JOB_REQUEST_ID_TAG,
+    EDA_JOB_RESULT_ARTIFACT_PATH,
+)
 from app.core.eda_job_store import get_eda_job_store
 from app.core.ts_profiler import get_ts_profiler
 from app.api.error_handler import handle_errors
 from app.config import get_settings
+from app.core.authorization import require_domino_job_start
+from app.services.dataset_service import get_dataset_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_FAILED_TERMINAL_EDA_JOB_STATUSES = {
+    "failed",
+    "error",
+    "killed",
+    "stopped",
+    "cancelled",
+}
+
+_TERMINAL_EDA_JOB_STATUSES = {
+    "completed",
+} | _FAILED_TERMINAL_EDA_JOB_STATUSES
 
 class ProfileRequest(BaseModel):
     """Request for data profiling."""
-    dataset_id: str = Field(..., description="The dataset to profile")
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID, needed for Domino Jobs",
+    )
     file_path: str = Field(..., description="Path to the data file")
     sample_size: int = Field(50000, description="Max rows to sample for profiling")
     sampling_strategy: str = Field("random", description="Sampling strategy: random, stratified, head, full")
@@ -142,6 +167,10 @@ async def suggest_target_column(request: ProfileRequest):
 
 class QuickProfileRequest(BaseModel):
     """Request for quick data profiling."""
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID, needed for Domino Jobs",
+    )
     file_path: str = Field(..., description="Path to the data file")
 
 
@@ -152,7 +181,11 @@ async def quick_profile(request: QuickProfileRequest):
     file_path = request.file_path
     profiler = get_data_profiler()
 
-    profile = profiler.profile_file(file_path, sample_size=1000)
+    profile = await profiler.profile_file(
+        file_path=file_path,
+        dataset_id=request.dataset_id,
+        sample_size=1000,
+    )
 
     # Return simplified summary
     return {
@@ -178,6 +211,10 @@ async def quick_profile(request: QuickProfileRequest):
 
 class ColumnProfileRequest(BaseModel):
     """Request for single-column profiling."""
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID, needed for Domino Jobs",
+    )
     file_path: str = Field(..., description="Path to the data file")
     column_name: str = Field(..., description="Name of the column to profile")
 
@@ -191,7 +228,11 @@ async def profile_column(request: ColumnProfileRequest):
     profiler = get_data_profiler()
 
     try:
-        profile = profiler.profile_file(file_path, sample_size=10000)
+        profile = await profiler.profile_file(
+            file_path=file_path,
+            dataset_id=request.dataset_id,
+            sample_size=10000,
+        )
 
         for col in profile["columns"]:
             if col["name"] == column_name:
@@ -329,6 +370,10 @@ async def get_available_presets():
 
 class TimeSeriesProfileRequest(BaseModel):
     """Request for time series profiling."""
+    dataset_id: Optional[str] = Field(
+        None,
+        description="Optional dataset ID, needed for Domino Jobs",
+    )
     file_path: str = Field(..., description="Path to the data file")
     time_column: str = Field(..., description="Name of the datetime column")
     target_column: str = Field(..., description="Name of the numeric target column")
@@ -356,7 +401,10 @@ class TimeSeriesProfileResponse(BaseModel):
 class AsyncProfileStartRequest(BaseModel):
     """Request to start async EDA profiling in a Domino Job."""
 
+    job_id: str = Field(..., description="Training job ID this EDA is associated with")
+    force_restart: bool = Field(False, description="If True, discard any existing result and launch a new Domino job")
     mode: Literal["tabular", "timeseries"] = Field("tabular")
+    dataset_id: str = Field(..., description="Optional dataset ID, needed for Domino Jobs")
     file_path: str = Field(..., description="Path to the data file")
     sample_size: int = Field(50000, description="Max rows to sample for profiling")
     sampling_strategy: str = Field(
@@ -414,10 +462,11 @@ async def profile_timeseries(request: TimeSeriesProfileRequest):
     profiler = get_ts_profiler()
 
     try:
-        result = profiler.profile_timeseries_file(
+        result = await profiler.profile_timeseries_file(
             file_path=request.file_path,
             time_column=request.time_column,
             target_column=request.target_column,
+            dataset_id=request.dataset_id,
             id_column=request.id_column,
             sample_size=request.sample_size,
             sampling_strategy=request.sampling_strategy,
@@ -444,8 +493,11 @@ async def profile_timeseries(request: TimeSeriesProfileRequest):
 
 @router.post("/profile/async/start", response_model=AsyncProfileStartResponse)
 @handle_errors("Async profiling start error")
-async def start_profile_async(request: AsyncProfileStartRequest):
+async def start_profile_async(request: AsyncProfileStartRequest, projectId: Optional[str] = None):
     """Start async EDA profiling as an external Domino Job."""
+    project_id = projectId
+    require_domino_job_start(project_id=project_id)
+
     if request.mode == "timeseries":
         if not request.time_column or not request.target_column:
             raise HTTPException(
@@ -454,19 +506,48 @@ async def start_profile_async(request: AsyncProfileStartRequest):
             )
 
     store = get_eda_job_store()
+
+    if not request.force_restart:
+        existing = await store.get_by_job(request.job_id, request.mode)
+        if existing and existing["status"] in ("pending", "running", "completed"):
+            return AsyncProfileStartResponse(
+                request_id=existing["request_id"],
+                status=existing["status"],
+                mode=request.mode,
+                domino_job_id=existing.get("domino_job_id"),
+                domino_job_status=existing.get("domino_job_status"),
+                domino_job_url=existing.get("domino_job_url"),
+            )
+
+    await store.delete_by_job(request.job_id, request.mode)
+
     settings = get_settings()
     request_id = str(uuid4())
-    store.create_request(
+    experiment_name = "eda_job_results_" + str(uuid4())
+
+    dataset_id = request.dataset_id
+    dataset_manager = get_dataset_manager()
+    dataset_path = await dataset_manager.get_dataset_path(dataset_id)
+    if not dataset_path:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not resolve dataset path for dataset {dataset_id}",
+        )
+    file_path = f"{dataset_path}/{request.file_path}"
+
+    await store.create_request(
         request_id=request_id,
+        job_id=request.job_id,
         mode=request.mode,
         request_payload=request.model_dump(exclude_none=True),
+        experiment_name=experiment_name,
     )
 
     launcher = get_domino_job_launcher()
     launch_result = await launcher.start_eda_job(
         request_id=request_id,
         mode=request.mode,
-        file_path=request.file_path,
+        file_path=file_path,
         sample_size=request.sample_size,
         sampling_strategy=request.sampling_strategy,
         stratify_column=request.stratify_column,
@@ -475,13 +556,15 @@ async def start_profile_async(request: AsyncProfileStartRequest):
         id_column=request.id_column,
         rolling_window=request.rolling_window,
         hardware_tier_name=request.domino_hardware_tier_name or settings.domino_eda_hardware_tier_name,
+        project_id=projectId,
+        experiment_name=experiment_name,
     )
     if not launch_result.get("success"):
         error_message = launch_result.get("error", "Failed to launch async profiling job")
-        store.update_request(request_id, status="failed", error=error_message)
+        await store.update_request(request_id, status="failed", error=error_message)
         raise HTTPException(status_code=502, detail=error_message)
 
-    store.update_request(
+    await store.update_request(
         request_id,
         status="running",
         domino_job_id=launch_result.get("domino_job_id"),
@@ -498,19 +581,94 @@ async def start_profile_async(request: AsyncProfileStartRequest):
         domino_job_url=launch_result.get("domino_job_url"),
     )
 
+def _resolve_eda_job_result(
+    request_id: str,
+    experiment_name: str,
+) -> dict[str, Any]:
+    """Resolve an async EDA result from MLflow using the request-id tagged run."""
+    client = mlflow.client.MlflowClient()
+    experiment = client.get_experiment_by_name(experiment_name)
+
+    if experiment is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"MLflow experiment {experiment_name} not found while resolving EDA request {request_id}"
+        )
+
+    runs = client.search_runs(
+        experiment_ids=[str(experiment.experiment_id)],
+        filter_string=f"tags.{EDA_JOB_REQUEST_ID_TAG} = '{request_id}'",
+        order_by=["attributes.start_time DESC"],
+        max_results=5,
+    )
+
+    if not runs or len(runs) == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No MLflow runs found for experiment {experiment_name} and EDA request {request_id}"
+        )
+
+    assert len(runs) == 1, "Only one run should be returned for eda results"
+
+    run = runs[0]
+    run_id = getattr(run.info, "run_id", None)
+
+    try:
+        root_artifacts = client.list_artifacts(run_id=run_id)
+
+        assert len(root_artifacts) == 1, "Run should contain one artifact"
+
+        result_artifact = root_artifacts[0]
+        artifact_path = result_artifact.path
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                downloaded_path = mlflow.artifacts.download_artifacts(
+                    run_id=run_id,
+                    artifact_path=result_artifact.path,
+                    dst_path=temp_dir,
+                )
+                payload = json.loads(Path(downloaded_path).read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    return payload
+                logger.warning(
+                    "EDA result artifact %s from run %s did not contain a JSON object",
+                    artifact_path,
+                    run_id,
+                )
+        except Exception as exn:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed downloading MLflow artifact {artifact_path} for EDA request {request_id} from run {run_id}"
+            ) from exn
+
+    except HTTPException:
+        raise
+    except Exception as exn:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed listing MLflow artifacts for run {run_id}"
+        ) from exn
 
 async def _build_async_status_response(request_id: str) -> AsyncProfileStatusResponse:
-    """Load async EDA status from file-backed metadata/results."""
+    """Load async EDA status."""
     store = get_eda_job_store()
     launcher = get_domino_job_launcher()
 
-    metadata = store.get_request(request_id)
+    metadata = await store.get_request(request_id)
     if metadata is None:
         raise HTTPException(status_code=404, detail=f"Async profile request not found: {request_id}")
 
-    result_payload = store.get_result(request_id)
+
+    # let experiment name resolution fail at the start, to allow the user
+    # to get this runtime failure early
+    experiment_name = metadata.get('experiment_name')
+    if experiment_name is None:
+        raise HTTPException(status_code=500, detail=f"An experiment name wasn't created for EDA job request {request_id}")
+
+    result_payload = await store.get_result(request_id)
     if result_payload and metadata.get("status") != "completed":
-        metadata = store.update_request(request_id, status="completed", error=None) or metadata
+        metadata = await store.update_request(request_id, status="completed", error=None) or metadata
 
     if result_payload:
         return AsyncProfileStatusResponse(
@@ -526,31 +684,37 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
     domino_job_id = metadata.get("domino_job_id")
     domino_job_status = metadata.get("domino_job_status")
 
-    if status in {"running", "pending"} and domino_job_id:
+    # Update status if not terminal
+    if status not in _TERMINAL_EDA_JOB_STATUSES and domino_job_id:
         domino_status_result = await launcher.get_job_status(domino_job_id)
         if domino_status_result.get("success"):
             latest_domino_status = domino_status_result.get("domino_job_status")
+
             if latest_domino_status and latest_domino_status != domino_job_status:
-                metadata = store.update_request(
+                metadata = await store.update_request(
                     request_id,
                     domino_job_status=latest_domino_status,
                 ) or metadata
                 domino_job_status = latest_domino_status
 
-            if latest_domino_status and latest_domino_status.lower() in {
-                "failed",
-                "error",
-                "killed",
-                "stopped",
-                "cancelled",
-            }:
+            if DominoJobLauncher.is_failed_status(latest_domino_status) or DominoJobLauncher.is_cancelled_status(latest_domino_status):
                 error_message = f"Domino profiling job ended with status: {latest_domino_status}"
-                metadata = store.update_request(
+                new_status = "failed"
+                metadata = await store.update_request(
                     request_id,
-                    status="failed",
+                    status=new_status,
                     error=error_message,
                 ) or metadata
-                status = "failed"
+                status = new_status
+            elif DominoJobLauncher.is_success_status(latest_domino_status):
+                # download the job outputs
+                new_status = "completed"
+                metadata = await store.update_request(
+                    request_id,
+                    status=new_status,
+                ) or metadata
+                status = new_status
+
 
     if status == "failed":
         return AsyncProfileStatusResponse(
@@ -559,7 +723,25 @@ async def _build_async_status_response(request_id: str) -> AsyncProfileStatusRes
             mode=metadata.get("mode"),
             domino_job_id=metadata.get("domino_job_id"),
             domino_job_status=metadata.get("domino_job_status"),
-            error=metadata.get("error") or store.get_error(request_id) or "Async profiling failed",
+            error=metadata.get("error") or await store.get_error(request_id) or "Async profiling failed",
+        )
+
+    # job is successful
+
+    if status == "completed":
+        if experiment_name:
+            result = _resolve_eda_job_result(request_id, experiment_name)
+            await store.write_result(request_id, metadata.get("mode"), result)
+
+    result_payload = await store.get_result(request_id)
+    if result_payload:
+        return AsyncProfileStatusResponse(
+            request_id=request_id,
+            status="completed",
+            mode=result_payload.get("mode"),
+            domino_job_id=metadata.get("domino_job_id"),
+            domino_job_status=metadata.get("domino_job_status"),
+            result=result_payload.get("result"),
         )
 
     return AsyncProfileStatusResponse(
@@ -581,5 +763,6 @@ async def get_profile_async_status(request: AsyncProfileStatusRequest):
 @router.get("/profile/async/{request_id}", response_model=AsyncProfileStatusResponse)
 @handle_errors("Async profiling status error")
 async def get_profile_async_status_get(request_id: str):
+    # TODO same as async status
     """GET variant for async EDA status polling."""
     return await _build_async_status_response(request_id)

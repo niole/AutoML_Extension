@@ -21,6 +21,21 @@ class TestProfileFile:
     """Tests for DataProfiler.profile_file."""
 
     @pytest.mark.asyncio
+    async def test_reads_local_file_path_when_dataset_id_omitted(self, profiler, tabular_csv, monkeypatch):
+        async def fail_fetch(dataset_id: str, file_path: str) -> bytes:
+            raise AssertionError("dataset_file_bytes.fetch should not be called for local file paths")
+
+        monkeypatch.setattr(
+            "app.core.data_profiler.dataset_file_bytes.fetch",
+            fail_fetch,
+        )
+
+        result = await profiler.profile_file(file_path=tabular_csv)
+
+        assert result["summary"]["total_rows"] == 200
+        assert result["summary"]["total_columns"] == 8
+
+    @pytest.mark.asyncio
     async def test_reads_dataset_file_bytes_via_data_api(self, profiler, monkeypatch):
         calls = []
 

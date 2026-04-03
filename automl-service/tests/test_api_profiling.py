@@ -9,6 +9,15 @@ Covers:
 """
 
 import pytest
+from app.api.routes.profiling import _resolve_eda_job_result
+from app.core.eda_job_metadata import (
+    EDA_JOB_REQUEST_ID_TAG,
+    EDA_JOB_RESULT_ARTIFACT_PATH,
+)
+import mlflow
+from pathlib import Path
+import json
+from uuid import uuid4
 
 
 def _patch_dataset_fetch(monkeypatch, file_path: str):
@@ -340,3 +349,28 @@ async def test_get_metrics(app_client):
     ts_values = [m["value"] for m in body["timeseries"]]
     assert "MASE" in ts_values
     assert "RMSE" in ts_values
+
+def test_resolve_eda_job_result(tmp_path):
+    request_id = "myrequestid"
+    experiment_name = "eda_exp_name" + str(uuid4())
+    expected_eda_result = {"cat": "dog"}
+
+    # Test setup: log artifact to an experiment run
+    mlflow.set_experiment(experiment_name)
+    run_tags = {
+        EDA_JOB_REQUEST_ID_TAG: request_id,
+    }
+    with mlflow.start_run(run_name="eda_run", tags=run_tags):
+            fixture_file_path = Path(tmp_path) / EDA_JOB_RESULT_ARTIFACT_PATH
+            with fixture_file_path.open("w", encoding="utf-8") as f:
+                json.dump(expected_eda_result, f, indent=2, default=str)
+            mlflow.log_artifact(str(fixture_file_path))
+
+    # run that is some other run
+    with mlflow.start_run():
+        pass
+
+    # Resolve the job result
+    result = _resolve_eda_job_result(request_id, experiment_name)
+
+    assert result == expected_eda_result

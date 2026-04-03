@@ -34,6 +34,8 @@ async_session_maker = async_sessionmaker(
 
 async def create_tables():
     """Create all database tables."""
+    from app.db import models  # noqa: F401
+
     try:
         async with engine.begin() as conn:
             # checkfirst=True is default but be explicit for multi-worker safety
@@ -65,6 +67,7 @@ async def run_migrations():
         ("jobs", "auto_register", "BOOLEAN DEFAULT 0"),
         ("jobs", "register_name", "VARCHAR(255)"),
         ("jobs", "feature_importance", "JSON"),
+        ("eda_jobs", "job_id", "VARCHAR(255)"),
     ]
 
     async with engine.begin() as conn:
@@ -80,6 +83,16 @@ async def run_migrations():
                     pass
                 else:
                     logger.debug(f"Migration skipped: {column} on {table} - {e}")
+
+        try:
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_eda_jobs_job_mode "
+                    "ON eda_jobs (job_id, mode) WHERE job_id IS NOT NULL"
+                )
+            )
+        except Exception as e:
+            logger.debug(f"Migration skipped: uq_eda_jobs_job_mode - {e}")
 
         try:
             await conn.execute(

@@ -94,6 +94,8 @@ class TestStartEdaJob:
             result = await launcher.start_eda_job(
                 request_id="req-1", mode="tabular", file_path="/data/train.csv",
                 sample_size=50000, sampling_strategy="random",
+                project_id=PROJECT_ID,
+                experiment_name="exp-1",
             )
         assert result["success"] is False
 
@@ -116,11 +118,12 @@ class TestStartEdaJob:
                 stratify_column=None, time_column=None, target_column=None,
                 id_column=None, rolling_window=None,
                 project_id=PROJECT_ID,
+                experiment_name="exp-1",
             )
 
         expected_command = (
             f"python {DominoJobLauncher.EDA_RUNNER_PATH}"
-            " --request-id req-1 --mode timeseries --file-path /mnt/datasets/eda.parquet"
+            " --request-id req-1 --experiment-name exp-1 --mode timeseries --file-path /mnt/datasets/eda.parquet"
             " --sample-size 10000 --sampling-strategy random"
         )
         assert captured["payload"]["commandToRun"] == expected_command
@@ -129,3 +132,42 @@ class TestStartEdaJob:
         assert captured["payload"]["projectId"] == PROJECT_ID
         assert result["success"] is True
         assert result["domino_job_id"] == "domino-job-999"
+
+
+# ===========================================================================
+# Status classification static methods
+# ===========================================================================
+
+
+class TestStatusClassification:
+    @pytest.mark.parametrize("status", ["succeeded", "Succeeded", "success", "completed", "done", "finished"])
+    def test_is_success_status(self, status):
+        assert DominoJobLauncher.is_success_status(status) is True
+
+    @pytest.mark.parametrize("status", ["failed", "Failed", "error", "Error"])
+    def test_is_failed_status(self, status):
+        assert DominoJobLauncher.is_failed_status(status) is True
+
+    @pytest.mark.parametrize("status", ["stopped", "Stopped", "cancelled", "canceled", "archived"])
+    def test_is_cancelled_status(self, status):
+        assert DominoJobLauncher.is_cancelled_status(status) is True
+
+    @pytest.mark.parametrize("status", ["succeeded", "failed", "stopped", "cancelled", "error", "done"])
+    def test_is_terminal_status(self, status):
+        assert DominoJobLauncher.is_terminal_status(status) is True
+
+    @pytest.mark.parametrize("status", ["running", "submitted", "queued", "pending", "initializing", None, ""])
+    def test_non_terminal_statuses(self, status):
+        assert DominoJobLauncher.is_terminal_status(status) is False
+
+    @pytest.mark.parametrize("status", ["running", "Running", "executing"])
+    def test_is_running_status(self, status):
+        assert DominoJobLauncher.is_running_status(status) is True
+
+    @pytest.mark.parametrize("status", ["queued", "Queued", "pending", "submitted", "initializing", "provisioning"])
+    def test_is_pending_status(self, status):
+        assert DominoJobLauncher.is_pending_status(status) is True
+
+    def test_stopped_is_not_success(self):
+        assert DominoJobLauncher.is_success_status("Stopped") is False
+        assert DominoJobLauncher.is_success_status("stopped") is False
