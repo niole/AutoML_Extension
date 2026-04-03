@@ -27,8 +27,7 @@ class DominoJobLauncher:
 
     _RUNNER_BASE = "/home/ubuntu/AutoML_Extension/automl-service/app/workers"
     TRAINING_RUNNER_PATH = f"{_RUNNER_BASE}/domino_training_runner.py"
-    #EDA_RUNNER_PATH = f"{_RUNNER_BASE}/domino_eda_runner.py"
-    EDA_RUNNER_PATH = f"automl-service/app/workers/domino_eda_runner.py"
+    EDA_RUNNER_PATH = f"{_RUNNER_BASE}/domino_eda_runner.py"
 
     def __init__(self):
         self.settings = get_settings()

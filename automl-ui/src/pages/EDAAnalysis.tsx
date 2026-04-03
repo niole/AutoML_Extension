@@ -14,13 +14,9 @@ import { useProjectUserSummary } from '../hooks/useProjectUserSummary'
 import { ProfiledDataView } from '../components/eda/ProfiledDataView'
 import { TimeSeriesConfigPanel } from '../components/eda/TimeSeriesConfigPanel'
 import { buildAppPath } from '../utils/appPath'
-import { Job } from '@/types/job'
-import { getJob } from '@/api/jobs'
-import { toDominoTenantUrl } from '@/utils/dominoLinks'
 
 function EDAAnalysis() {
   const { dominoJobs } = useCapabilities()
-  const [edaJob, setEdaJob] = useState<Job | null>(null)
   const { project_name: projectName } = useProjectUserSummary()
   const [searchParams] = useSearchParams()
   const { data: datasetsData, isLoading: loadingDatasets, error: datasetsError } = useDatasets()
@@ -121,19 +117,6 @@ function EDAAnalysis() {
     setTsProfileData,
     addNotification,
   })
-
-  async function getJobResponse(jobId: string) {
-      const job = await getJob(jobId)
-      setEdaJob(job)
-  }
-
-  useEffect(() => {
-    if (asyncDominoJobId) {
-      getJobResponse(asyncDominoJobId)
-    } else {
-      setEdaJob(null)
-    }
-  }, [asyncDominoJobId])
 
   useEffect(() => {
     if (!selectedFilePath) return
@@ -330,7 +313,6 @@ function EDAAnalysis() {
   }
 
   // File is selected - show EDA analysis
-  const edaJobUrl = toDominoTenantUrl(edaJob?.domino_job_url)
   return (
     <div className="space-y-6">
       {breadcrumb}
@@ -385,7 +367,7 @@ function EDAAnalysis() {
         <div className="border border-domino-border bg-domino-bg-tertiary p-3 text-sm text-domino-text-secondary">
           <p>
             Async profiling status: <span className="font-medium capitalize">{asyncProfileStatus}</span>
-            {asyncDominoJobId ? <><span>{" | "}</span><Link to={edaJobUrl}>{`Domino Job ID: ${asyncDominoJobId}`}</Link></> : ''}
+            {asyncDominoJobId ? <><span>{" | "}</span>{`Domino Job ID: ${asyncDominoJobId}`}</> : ''}
           </p>
           {asyncProfileError && (
             <p className="text-domino-accent-red mt-1">{asyncProfileError}</p>
