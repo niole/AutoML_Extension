@@ -396,7 +396,7 @@ async def _sync_recent_terminal_domino_metadata_for_overview(db: AsyncSession) -
             continue
         if not job.domino_job_id:
             continue
-        if _is_domino_terminal_status(job.domino_job_status):
+        if DominoJobLauncher.is_terminal_status(job.domino_job_status):
             continue
         candidates.append(job)
         if len(candidates) >= _DOMINO_TERMINAL_METADATA_SYNC_LIMIT:
