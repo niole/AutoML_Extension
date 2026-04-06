@@ -17,17 +17,17 @@ _token_var: ContextVar[Optional[str]] = ContextVar("forwarded_authorization_toke
 def set_request_auth_header(value: Optional[str]) -> None:
     _auth_header_var.set(value)
 
-    # set token var
     if value is None:
-        _token_var = None
-    else:
-        # parse out token var
-        found = re.search(AUTH_TOKEN_EXTRACT_PATTERN, value.strip(), re.IGNORECASE)
-        if not found:
-            logger.debug("Could not extract token from auth header")
-            return None
+        _token_var.set(None)
+        return
 
-        _token_var.set(found.group(1))
+    found = re.search(AUTH_TOKEN_EXTRACT_PATTERN, value.strip(), re.IGNORECASE)
+    if not found:
+        logger.debug("Could not extract token from auth header")
+        _token_var.set(None)
+        return
+
+    _token_var.set(found.group(1))
 
 
 def get_request_auth_header() -> Optional[str]:
